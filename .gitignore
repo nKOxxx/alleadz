@@ -1,0 +1,20 @@
+# dependencies / build
+node_modules/
+dist/
+coverage/
+
+# env & secrets — NEVER commit (SECURITY_BASELINE #2)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# local scratch
+/tmp/
+*.log
