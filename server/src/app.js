@@ -39,12 +39,12 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   // /api namespace: same auth router (login at /api/auth/login too) plus the
   // tenant-scoped routers. Tests and the client both exercise /api/*.
   app.use('/api', authLimiter, createAuthRouter({ pool }))
-  app.use('/api', authLimiter, createOrgsRouter({ pool }))
-  app.use('/api', authLimiter, createImportsRouter({ pool }))
-  app.use('/api', authLimiter, createOpportunitiesRouter({ pool }))
-  app.use('/api', authLimiter, createPeopleRouter({ pool }))
-  app.use('/api', authLimiter, createDiscoveryRouter({ pool, fetchImpl }))
-  app.use('/api', authLimiter, createPortfolioRouter({ pool }))
+  app.use('/api', createOrgsRouter({ pool }))
+  app.use('/api', createImportsRouter({ pool }))
+  app.use('/api', createOpportunitiesRouter({ pool }))
+  app.use('/api', createPeopleRouter({ pool }))
+  app.use('/api', createDiscoveryRouter({ pool, fetchImpl }))
+  app.use('/api', createPortfolioRouter({ pool }))
 
   app.use((req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Unknown route' } })
