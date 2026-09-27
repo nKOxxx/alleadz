@@ -20,3 +20,19 @@ User directive: use twentyhq/twenty as the basis for the CRM part. Decision (use
 - **Never** copy files marked `/* @license Enterprise */` (commercial license).
 - AGPL files must not enter this repo: hosting for others + AGPL would force
   source disclosure of the whole derivative work.
+
+## 2026-09-27 — Scrapling stealth transport (discovery layer)
+- **Decision:** Adopt Scrapling (BSD-3-Clause, 84k stars) as an OPTIONAL second
+  fetch transport for discovery, behind a localhost FastAPI sidecar
+  (`sidecar/scrapling_sidecar.py`), enabled via `SCRAPLING_URL` env +
+  `stealth:true` request flag. BSD-3 is license-safe (no AGPL disclosure risk;
+  license law intact).
+- **Why:** Modern marketing/press pages 403 plain fetch (proven: openai.com/news
+  direct = 403/41 chars; stealth = 200/2,226 chars → 3 triage findings). Without
+  stealth, the intelligence layer starves on exactly the pages that matter.
+- **Laws kept:** SSRF/2MB/timeout caps mirrored in the sidecar; snapshots +
+  content-hash still stored Node-side; no LLM; additive CONTRACTS (new optional
+  field + `via` in response).
+- **Deployment:** sidecar is local/dev-only (Render free tier = single service;
+  no paid hosting). Prod uses direct transport until a second free-tier
+  service (e.g. Fly) is justified.

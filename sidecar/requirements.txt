@@ -1,0 +1,5 @@
+camoufox==0.5.6
+fastapi==0.141.1
+playwright==1.62.0
+scrapling==0.4.15
+uvicorn==0.54.0

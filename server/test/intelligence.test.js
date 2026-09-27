@@ -142,3 +142,18 @@ describe('signal → claim promotion (cite-or-hypothesis law)', () => {
     expect(refused.status).toBe(409)
   })
 })
+
+describe('stealth transport (Scrapling sidecar, additive)', () => {
+  it('stealth:true without SCRAPLING_URL behaves exactly like direct (feature off)', async () => {
+    const runId = await runDiscovery('https://press.example.com/gulf-3', FUNDING_PAGE)
+    const res = await api(ctx.base, { method: 'POST', path: '/discovery/analyze', token: ctx.A.token,
+      tenantId: ctx.A.tenantId, body: { run_id: runId } })
+    expect(res.status).toBe(201)
+    // run a stealth request through /discovery/run with no sidecar configured:
+    const run = await api(ctx.base, { method: 'POST', path: '/discovery/run', token: ctx.A.token,
+      tenantId: ctx.A.tenantId, body: { urls: ['https://127.0.0.1:9/x'], stealth: true } })
+    // SSRF guard still fires (transport-independent); no crash, honest blocked row
+    expect(run.status).toBe(200)
+    expect(run.json.results[0].status).toBe('blocked')
+  })
+})

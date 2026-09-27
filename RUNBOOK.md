@@ -46,8 +46,21 @@ A synthetic demo tenant exists on prod (registered 2026-09-27, names suffixed
 "synthetic"; credentials auto-generated, NOT stored anywhere — register a fresh
 one if lost; data model supports unlimited tenants).
 
+## Scrapling stealth sidecar (optional, local/dev)
+- What: BSD-3-Clause Scrapling (Camoufox stealth browser) behind a localhost-only
+  FastAPI sidecar; gives discovery a second transport for bot-challenged pages.
+- Run: `~/.scrapling-venv/bin/python -m uvicorn sidecar.scrapling_sidecar:app --host 127.0.0.1 --port 8185` (from repo root)
+- Enable: start server with `SCRAPLING_URL=http://127.0.0.1:8185`, then
+  `POST /api/discovery/run {"urls":[...],"stealth":true}`. Without the env var or
+  flag, behavior is identical to before (additive contract).
+- Guards mirror lib/discovery.js: http(s) only, SSRF blocklist incl. DNS-resolved
+  private IPs, 2 MB cap, 20s timeout. Every stealth failure falls back to direct
+  fetch and is recorded in the run row (`via` field).
+- Deployment law: sidecar is local/dev-only (Render free tier = 1 Node service,
+  no paid hosting). Prod keeps direct transport.
+
 ## Test floors (local)
-- server: `cd server && npx vitest run` → **49/49** (needs local PG on /tmp socket;
+- server: `cd server && npx vitest run` → **50/50** (needs local PG on /tmp socket;
   falls back to `DATABASE_URL`)
 - client: `cd client && npx vitest --run` → **3/3**, `npm run build` clean
 - The scratch-DB harness creates temp databases + a least-privilege

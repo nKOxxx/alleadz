@@ -9,7 +9,37 @@ import { boundedFetch, extractAllowed, DISCOVERY_LIMITS } from '../lib/discovery
 const runSchema = z.object({
   organisation_id: z.string().uuid().nullable().optional(),
   urls: z.array(z.string().url()).min(1).max(DISCOVERY_LIMITS.maxPerRun),
+  // ADDITIVE: optional stealth transport for bot-challenged pages. When the
+  // Scrapling sidecar is configured (SCRAPLING_URL) and this is true, each URL
+  // tries stealth first, then falls back to plain boundedFetch on any error.
+  stealth: z.boolean().nullable().optional(),
 })
+
+// Optional stealth transport (Scrapling sidecar). Same result shape as
+// boundedFetch: {status, finalUrl, bytes, contentHash, snapshot}. Absent env
+// var => feature off, zero behavior change (contract additive).
+async function stealthFetch(sidecarUrl, rawUrl) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 30_000)
+  try {
+    const res = await fetch(`${sidecarUrl}/fetch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: rawUrl }),
+      signal: ctrl.signal,
+    })
+    const body = await res.json()
+    if (!res.ok) {
+      const e = new Error(body?.detail || `sidecar ${res.status}`)
+      e.status = res.status
+      throw e
+    }
+    return { status: body.status, finalUrl: body.finalUrl, bytes: body.bytes,
+             contentHash: body.contentHash, snapshot: body.snapshot }
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 export function createDiscoveryRouter({ pool, fetchImpl } = {}) {
   const router = express.Router()
@@ -18,10 +48,26 @@ export function createDiscoveryRouter({ pool, fetchImpl } = {}) {
   router.post('/discovery/run', requireRole('admin', 'analyst'), express.json({ limit: '100kb' }), async (req, res, next) => {
     try {
       const input = runSchema.parse(req.body)
+      const sidecar = process.env.SCRAPLING_URL || null
       const results = []
       for (const url of input.urls.slice(0, DISCOVERY_LIMITS.maxPerRun)) {
         try {
-          const out = await boundedFetch(url, { fetchImpl: fetchImpl || globalThis.fetch })
+          let out = null
+          let via = 'direct'
+          if (input.stealth && sidecar) {
+            try {
+              out = await stealthFetch(sidecar, url)
+              via = 'stealth'
+            } catch (stealthErr) {
+              // fall through to direct transport; record the stealth failure reason
+              out = null
+              via = `stealth-failed: ${String(stealthErr.message).slice(0, 120)}`
+            }
+          }
+          if (!out) {
+            out = await boundedFetch(url, { fetchImpl: fetchImpl || globalThis.fetch })
+            via = via === 'direct' ? 'direct' : `${via};fell-back-to-direct`
+          }
           const extracted = extractAllowed(out.snapshot)
           const saved = await withTenant(pool, req.tenantId, req.user.id, async (c) => {
             const { rows } = await c.query(
@@ -36,7 +82,7 @@ export function createDiscoveryRouter({ pool, fetchImpl } = {}) {
             )
             return rows[0].id
           })
-          results.push({ url, run_id: saved, status: 'ok', http_status: out.status, extracted })
+          results.push({ url, run_id: saved, status: 'ok', http_status: out.status, via, extracted })
         } catch (err) {
           const blocked = /Blocked host|Only http|Invalid URL/.test(err.message)
           await withTenant(pool, req.tenantId, req.user.id, async (c) => {
