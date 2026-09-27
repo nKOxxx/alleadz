@@ -47,11 +47,23 @@ A synthetic demo tenant exists on prod (registered 2026-09-27, names suffixed
 one if lost; data model supports unlimited tenants).
 
 ## Test floors (local)
-- server: `cd server && npx vitest run` → **40/40** (needs local PG on /tmp socket;
+- server: `cd server && npx vitest run` → **42/42** (needs local PG on /tmp socket;
   falls back to `DATABASE_URL`)
 - client: `cd client && npx vitest --run` → **3/3**, `npm run build` clean
 - The scratch-DB harness creates temp databases + a least-privilege
   `alleadz_app` role locally; it never touches Render.
+
+## Local demo stack (screenshot/QA runs)
+- Local server MUST use the `alleadz_app` role, never superuser: Postgres
+  superusers/owners bypass RLS (locally that leaked cross-tenant rows —
+  prod is unaffected since Render's role is non-superuser).
+  `DATABASE_URL="postgresql://alleadz_app@/alleadz_demo?host=/tmp" PGPASSWORD=…`
+- `RATE_LIMITS=off` env relaxes the auth limiter for UI-automation runs only
+  (`server/src/index.js`; prod leaves it on).
+- `client/vite.config.js` now has a `preview.proxy` for `/api` + `/auth` —
+  `vite preview` (port 5173) needs it; `server.proxy` only applies to dev.
+- End-to-end capture verified via `shoot.py` (python playwright): register →
+  type idea → Create opportunity → lands on `/pipeline/:id`.
 
 ## Security-relevant facts
 - `users.role` column exists ONLY in SG's `public.users` — if you see
