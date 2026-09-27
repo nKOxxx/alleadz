@@ -15,6 +15,7 @@ export default function Shell() {
         <NavLink to="/opportunities" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>Opportunities</NavLink>
         <NavLink to="/intelligence" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>Intelligence</NavLink>
         <NavLink to="/organisations" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>Organisations</NavLink>
+        <NavLink to="/import" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>Import</NavLink>
         <NavLink to="/actions" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>Actions</NavLink>
         <div className="side-foot">
           Workspace: {tenant?.name}

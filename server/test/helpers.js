@@ -118,3 +118,21 @@ export function api(base, { method = 'GET', path, token, tenantId, body } = {}) 
     body: method === 'GET' ? undefined : JSON.stringify(body ?? {}),
   }).then(async (res) => ({ status: res.status, json: await res.json().catch(() => ({})) }))
 }
+
+/** Raw SQL as a specific tenant (sets RLS GUCs). For test assertions only. */
+export async function queryAsTenant(pool, tenantId, userId, sql, params = []) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId])
+    await client.query(`SELECT set_config('app.user_id', $1, true)`, [userId])
+    const out = await client.query(sql, params)
+    await client.query('COMMIT')
+    return out
+  } catch (e) {
+    try { await client.query('ROLLBACK') } catch {}
+    throw e
+  } finally {
+    client.release()
+  }
+}

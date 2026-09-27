@@ -14,6 +14,7 @@ import { securityHeaders } from './middleware/security-headers.js'
 import { createRateLimiter, createAuthRateLimiter } from './middleware/rate-limit.js'
 import { createAuthRouter } from './routes/auth.js'
 import { createOrgsRouter } from './routes/orgs.js'
+import { createImportsRouter } from './routes/imports.js'
 
 export function createApp({ pool, logger = console, rateLimits = true } = {}) {
   if (!pool) throw new Error('createApp requires a pg pool')
@@ -35,6 +36,7 @@ export function createApp({ pool, logger = console, rateLimits = true } = {}) {
   // tenant-scoped routers. Tests and the client both exercise /api/*.
   app.use('/api', authLimiter, createAuthRouter({ pool }))
   app.use('/api', authLimiter, createOrgsRouter({ pool }))
+  app.use('/api', authLimiter, createImportsRouter({ pool }))
 
   app.use((req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Unknown route' } })

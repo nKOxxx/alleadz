@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from './state.jsx'
 import { Login, Register } from './screens/Login.jsx'
 import Shell from './screens/Shell.jsx'
 import Organisations from './screens/Organisations.jsx'
+import ImportQueue from './screens/ImportQueue.jsx'
 import Opportunities from './screens/Opportunities.jsx'
 import Intelligence from './screens/Intelligence.jsx'
 import Actions from './screens/Actions.jsx'
@@ -30,6 +31,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="opportunities" element={<Opportunities />} />
             <Route path="intelligence" element={<Intelligence />} />
             <Route path="organisations" element={<Organisations />} />
+            <Route path="import" element={<ImportQueue />} />
             <Route path="actions" element={<Actions />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
