@@ -39,15 +39,18 @@ export default function Capture({ onCreated }) {
         const out = await api('/orgs', { method: 'POST', body: { canonical_name: name, entity_type: 'buyer' } })
         target = out
       }
-      const twinOrgs = await api('/orgs?limit=100')
-      // find any existing offering twin; if none, create the org skeleton is not
-      // forced on the user — the opportunity can reference their own company's
-      // first offering twin, creating it transparently if absent.
+      // reuse the cached offering twin when present (avoids N+1 twin lookups);
+      // otherwise create it once and remember it for the next capture.
       let twin = null
-      for (const o of twinOrgs.organisations || []) {
-        const t = await api(`/twins?org_id=${o.id}`).catch(() => ({ twins: [] }))
-        const offering = (t.twins || []).find((x) => x.offering)
-        if (offering) { twin = offering; break }
+      const cachedTwin = localStorage.getItem('alleadz.ownTwin')
+      if (cachedTwin) { try { twin = JSON.parse(cachedTwin) } catch { twin = null } }
+      if (!twin?.id) {
+        const twinOrgs = await api('/orgs?limit=200')
+        for (const o of twinOrgs.organisations || []) {
+          const t = await api(`/twins?org_id=${o.id}`).catch(() => ({ twins: [] }))
+          const offering = (t.twins || []).find((x) => x.offering)
+          if (offering) { twin = offering; break }
+        }
       }
       if (!twin) {
         const created = await api('/orgs', { method: 'POST', body: { canonical_name: 'Our company (edit me)', entity_type: 'provider' } })
@@ -57,6 +60,7 @@ export default function Capture({ onCreated }) {
         } })
         twin = t.twin || t
       }
+      try { localStorage.setItem('alleadz.ownTwin', JSON.stringify(twin)) } catch {}
       const opp = await api('/opportunities', { method: 'POST', body: {
         offering_twin_id: twin.id, target_org_id: target.id, sector_type: 'custom',
       } })

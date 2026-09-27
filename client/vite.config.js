@@ -10,6 +10,13 @@ export default defineConfig({
       '/auth': 'http://127.0.0.1:8180',
     },
   },
+  preview: {
+    port: 5173,
+    proxy: {
+      '/api': 'http://127.0.0.1:8180',
+      '/auth': 'http://127.0.0.1:8180',
+    },
+  },
   test: {
     environment: 'happy-dom',
     testTimeout: 15_000,
