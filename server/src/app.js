@@ -15,6 +15,7 @@ import { createRateLimiter, createAuthRateLimiter } from './middleware/rate-limi
 import { createAuthRouter } from './routes/auth.js'
 import { createOrgsRouter } from './routes/orgs.js'
 import { createImportsRouter } from './routes/imports.js'
+import { createOpportunitiesRouter } from './routes/opportunities.js'
 
 export function createApp({ pool, logger = console, rateLimits = true } = {}) {
   if (!pool) throw new Error('createApp requires a pg pool')
@@ -37,6 +38,7 @@ export function createApp({ pool, logger = console, rateLimits = true } = {}) {
   app.use('/api', authLimiter, createAuthRouter({ pool }))
   app.use('/api', authLimiter, createOrgsRouter({ pool }))
   app.use('/api', authLimiter, createImportsRouter({ pool }))
+  app.use('/api', authLimiter, createOpportunitiesRouter({ pool }))
 
   app.use((req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Unknown route' } })
