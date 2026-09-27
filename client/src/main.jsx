@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { ToastProvider, Toaster } from 'twenty-ui'
 import '@fontsource-variable/inter'
 import './styles.css'
 import { AuthProvider, useAuth } from './state.jsx'
@@ -23,6 +24,7 @@ function Gate({ children }) {
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
+      <ToastProvider><Toaster /></ToastProvider>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />

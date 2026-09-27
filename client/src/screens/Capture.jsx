@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import { Callout } from 'twenty-ui'
 
 // The ONE entry point: an idea in plain words becomes a real opportunity.
 // Type → pick/quick-create the company → the system creates signal +
@@ -108,7 +109,7 @@ export default function Capture({ onCreated }) {
             {!picked && !matches.length && text.trim() && (
               <div className="capture-picked">New company will be created: <strong>{text.trim().slice(0, 80)}</strong></div>
             )}
-            {err && <div className="error">{err}</div>}
+            {err && <Callout variant="danger" title="Couldn't create">{err}</Callout>}
             <div className="capture-actions">
               <button type="button" className="btn secondary" onClick={() => setOpen(false)}>Cancel</button>
               <button className="btn" disabled={busy || !text.trim()}>{busy ? 'Creating…' : 'Create opportunity'}</button>
