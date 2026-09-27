@@ -33,6 +33,11 @@ export function createPool(connectionString = process.env.DATABASE_URL) {
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    // Shared-database mode: all Alleadz objects live in the `alleadz` schema
+    // (free-tier Render allows one active Postgres). No-op if the schema is
+    // absent (dedicated-DB mode). Set per-connection so RLS policies,
+    // grants, and migrations all resolve inside alleadz.*.
+    options: '-c search_path=alleadz,public',
   })
 }
 

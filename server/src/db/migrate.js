@@ -12,7 +12,7 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), '../../migrations')
 
 export async function migrate(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error('DATABASE_URL is not set')
-  const client = new pg.Client({ connectionString })
+  const client = new pg.Client({ connectionString, options: '-c search_path=alleadz,public' })
   await client.connect()
   try {
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
