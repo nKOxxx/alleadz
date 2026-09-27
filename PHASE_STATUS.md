@@ -47,3 +47,10 @@
 - [x] all proposed reuse grounded in inspected files (table above)
 - [x] phase briefs identify dependencies and tests (`docs/phases/`)
 - [x] no backend claims until tested (status table starts empty of "passed" claims)
+
+## Final sweep (2026-09-27)
+- Prod https://alleadz.onrender.com healthy (`{"ok":true}`), commit `238caf2`.
+- Prod smoke: register → org → person → contact → opportunity → plan all 201 (`SMOKE_OK`).
+- Unauthed `/api/packs` → 401 (auth wall confirmed on prod).
+- Showcase: nikolastojanow.com/projects/alleadz/ live (HTTP 200; HTTPS apex still
+  serves shared `*.github.io` cert — GitHub issuance pending, watchdog monitors).
