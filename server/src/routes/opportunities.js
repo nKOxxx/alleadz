@@ -219,6 +219,11 @@ export function createOpportunitiesRouter({ pool }) {
         )
         const targetClaims = {}
         for (const cl of claimRows) targetClaims[cl.predicate] = cl.value?.value ?? cl.value
+        // country fact of record = the organisation row itself (claims may also assert it)
+        if (targetClaims.country == null) {
+          const { rows: orgRows } = await c.query('SELECT country FROM organisations WHERE id = $1', [opp.target_org_id])
+          targetClaims.country = orgRows[0]?.country ?? null
+        }
         const claimIds = new Set(claimRows.map((cl) => cl.id))
 
         // A05: unsupported material assertions block thesis_ready
@@ -243,12 +248,18 @@ export function createOpportunitiesRouter({ pool }) {
         const scores = scoreOpportunity(input.ratings)
         const contradictions = input.contradictions
 
-        // evidence age: newest source referenced by any cited claim
-        let evidenceAgeDays = 9999
-        const citedSources = claimRows.filter((cl) => claimIds.has(cl.id)).flatMap((cl) => cl.evidence_source_ids || [])
+        // evidence age: newest source referenced by any cited claim.
+        // Claims with NO cited sources are user-declared (user_claim) — age is
+        // not evaluated for them (9999 sentinel only applies to cited claims).
+        let evidenceAgeDays = 0
+        const citedSources = claimRows.flatMap((cl) => cl.evidence_source_ids || [])
         if (citedSources.length) {
           const { rows: srcRows } = await c.query('SELECT max(observed_at) m FROM sources WHERE id = ANY($1)', [citedSources])
-          if (srcRows[0]?.m) evidenceAgeDays = Math.floor((Date.now() - new Date(srcRows[0].m).getTime()) / 86400000)
+          if (srcRows[0]?.m) {
+            evidenceAgeDays = Math.floor((Date.now() - new Date(srcRows[0].m).getTime()) / 86400000)
+          } else {
+            evidenceAgeDays = 9999 // dangling source ids = stale evidence
+          }
         }
         const conf = confidenceFor({ coverage: scores.coverage, hardChecks, evidenceAgeDays, contradictions })
 
@@ -299,15 +310,16 @@ export function createOpportunitiesRouter({ pool }) {
         if (to === 'qualifying') {
           const { rows: th } = await c.query(
             'SELECT confidence FROM theses WHERE id = $1', [opp.latest_thesis_id])
-          if (!th.rows.length || th.rows[0].confidence === 'insufficient') {
+          if (!th.length || th[0].confidence === 'insufficient') {
             const e = new Error('qualifying requires confidence better than insufficient'); e.status = 409; throw e
           }
         }
         if (to === 'qualified') {
           const { rows: thq } = await c.query(
             'SELECT hard_checks FROM theses WHERE id = $1', [opp.latest_thesis_id])
-          const hc = thq.rows[0]?.hard_checks?.summary
-          if (!hc || !hc.eligible_for_qualification) {
+          const summary = thq[0]?.hard_checks?.summary
+          const eligible = summary ? Boolean(summary.eligible_for_qualification) : false
+          if (!eligible) {
             const e = new Error('qualified requires all hard checks to pass (no unknown, no fail)')
             e.status = 409; throw e
           }

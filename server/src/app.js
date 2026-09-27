@@ -18,6 +18,7 @@ import { createImportsRouter } from './routes/imports.js'
 import { createOpportunitiesRouter } from './routes/opportunities.js'
 import { createPeopleRouter } from './routes/people.js'
 import { createDiscoveryRouter } from './routes/discovery.js'
+import { createPortfolioRouter } from './routes/portfolio.js'
 
 export function createApp({ pool, logger = console, rateLimits = true, fetchImpl } = {}) {
   if (!pool) throw new Error('createApp requires a pg pool')
@@ -43,6 +44,7 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use('/api', authLimiter, createOpportunitiesRouter({ pool }))
   app.use('/api', authLimiter, createPeopleRouter({ pool }))
   app.use('/api', authLimiter, createDiscoveryRouter({ pool, fetchImpl }))
+  app.use('/api', authLimiter, createPortfolioRouter({ pool }))
 
   app.use((req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Unknown route' } })
