@@ -119,6 +119,15 @@ export function createPeopleRouter({ pool }) {
     } catch (e) { next(e) }
   })
 
+  router.get('/contacts/all', async (req, res, next) => {
+    try {
+      const rows = await withTenant(pool, req.tenantId, req.user.id, (c) =>
+        c.query('SELECT * FROM contact_points ORDER BY created_at DESC LIMIT 500'),
+      )
+      res.json({ contacts: rows.rows })
+    } catch (e) { next(e) }
+  })
+
   router.get('/contacts', async (req, res, next) => {
     try {
       const personId = z.string().uuid().parse(req.query.person_id)

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { Banner, Status } from 'twenty-ui'
 
 // Approvals board: what's ready to send, what's blocked and why.
 // The law stands: the system never sends — a human exports and sends.
@@ -30,6 +31,11 @@ export default function Approvals() {
       </div>
       {err && <div className="error">{err}</div>}
 
+      <Banner color="blue" variant="secondary">
+        The system never sends. A live approval only unlocks the export button — a human
+        downloads the bundle and sends it. Approvals expire and can be revoked instantly.
+      </Banner>
+
       <div className="card">
         {tasks === null ? (
           <div className="empty">Loading…</div>
@@ -48,12 +54,12 @@ export default function Approvals() {
                   <td className="count">{t.plan_title || '—'}</td>
                   <td>
                     {!t.approval_id
-                      ? <span className="chip unknown">not requested</span>
+                      ? <Status color="gray">not requested</Status>
                       : t.revoked_at
-                        ? <span className="chip disputed">revoked</span>
+                        ? <Status color="red">revoked</Status>
                         : live(t)
-                          ? <span className="chip sourced_fact">live · expires {String(t.expires_at).slice(0, 10)}</span>
-                          : <span className="chip disputed">expired</span>}
+                          ? <Status color="green" weight="medium">live · expires {String(t.expires_at).slice(0, 10)}</Status>
+                          : <Status color="orange">expired</Status>}
                   </td>
                   <td>
                     {live(t) && (

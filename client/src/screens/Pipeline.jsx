@@ -1,6 +1,17 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import { Avatar, Banner, Status } from 'twenty-ui'
+
+const STAGE_COLOR = {
+  candidate: 'gray',
+  researching: 'sky',
+  thesis_ready: 'blue',
+  human_reviewed: 'violet',
+  qualifying: 'purple',
+  qualified: 'green',
+  handed_off: 'jade',
+}
 
 const STAGES = ['candidate', 'researching', 'thesis_ready', 'human_reviewed', 'qualifying', 'qualified', 'handed_off']
 
@@ -48,7 +59,7 @@ function Row({ o }) {
   return (
     <tr className="clickable" onClick={() => navigate(`/pipeline/${o.id}`)}>
       <td><strong>{o.target_name || 'Untitled'}</strong></td>
-      <td><span className="chip stage">{o.stage}</span></td>
+      <td><Status color={STAGE_COLOR[o.stage] || 'gray'} weight="medium">{o.stage.replace('_', ' ')}</Status></td>
       <td>{o.priority != null ? `${o.priority}/100` : '—'}</td>
       <td className="count">{String(o.updated_at || '').slice(0, 10)}</td>
     </tr>
@@ -116,7 +127,7 @@ function Record({ id }) {
         <div>
           <button className="crumb" onClick={() => navigate('/pipeline')}>← Pipeline</button>
           <h1>{opp.target_name || 'Opportunity'}</h1>
-          <div className="sub"><span className="chip stage">{opp.stage}</span> · sector: {opp.sector_type} · created {String(opp.created_at || '').slice(0, 10)}</div>
+          <div className="sub"><Status color={STAGE_COLOR[opp.stage] || 'gray'} weight="medium">{opp.stage.replace('_', ' ')}</Status> · sector: {opp.sector_type} · created {String(opp.created_at || '').slice(0, 10)}</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn secondary" disabled={busy} onClick={generateThesis}>Draft thesis</button>
@@ -135,7 +146,10 @@ function Record({ id }) {
         <div className="card">
           <h2>Thesis</h2>
           {!thesis ? (
-            <div className="empty">No thesis yet. “Draft thesis” runs the deterministic rubric — every claim cited or framed as hypothesis.</div>
+            <Banner color="blue">
+              No thesis yet. “Draft thesis” runs the deterministic rubric — every claim must be
+              evidence-cited or explicitly framed as a hypothesis. Nothing scores on vibes.
+            </Banner>
           ) : (
             <div>
               <div style={{ display: 'flex', gap: 14, marginBottom: 8 }}>
@@ -178,7 +192,14 @@ function Record({ id }) {
             <thead><tr><th>Name</th><th>Role</th><th>Seniority</th></tr></thead>
             <tbody>
               {people.filter((p) => p.organisation_id === opp.target_org_id).map((p) => (
-                <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.role_title || '—'}</td><td>{p.seniority || '—'}</td></tr>
+                <tr key={p.id}>
+                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Avatar name={p.full_name} size="sm" colorSeed={p.id} />
+                    <strong>{p.full_name}</strong>
+                  </td>
+                  <td>{p.role_title || '—'}</td>
+                  <td>{p.seniority || '—'}</td>
+                </tr>
               ))}
             </tbody>
           </table>

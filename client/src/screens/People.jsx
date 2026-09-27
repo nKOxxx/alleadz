@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { Avatar, Chip } from 'twenty-ui'
 
 // People & contacts = CRM people object. Inline create + contact points,
 // with the email-class law surfaced (a published contact is what makes
@@ -26,7 +27,7 @@ export default function People() {
   async function load() {
     setErr('')
     try {
-      const [p, c, o] = await Promise.all([api('/people'), api('/contacts'), api('/orgs?limit=200')])
+      const [p, c, o] = await Promise.all([api('/people'), api('/contacts/all'), api('/orgs?limit=200')])
       setPeople(p.people || []); setContacts(c.contacts || []); setOrgs(o.organisations || [])
     } catch (ex) { setErr(ex.message) }
   }
@@ -120,11 +121,18 @@ export default function People() {
                 const c = emailFor(p.id)
                 return (
                   <tr key={p.id}>
-                    <td><strong>{p.full_name}</strong></td>
+                    <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Avatar name={p.full_name} size="sm" colorSeed={p.id} />
+                      <strong>{p.full_name}</strong>
+                    </td>
                     <td>{orgName(p.organisation_id)}</td>
                     <td>{p.role_title || '—'}</td>
                     <td>{c.value || <span className="count">none</span>}</td>
-                    <td>{c.email_class ? <span className={`chip ${c.email_class === 'person_published' || c.email_class === 'company_published' ? 'sourced_fact' : 'unknown'}`}>{c.email_class.replace(/_/g, ' ')}</span> : '—'}</td>
+                    <td>{c.email_class ? (
+                      <Chip size="sm" variant="soft" color={c.email_class === 'person_published' || c.email_class === 'company_published' ? 'primary' : 'secondary'}>
+                        {c.email_class.replace(/_/g, ' ')}
+                      </Chip>
+                    ) : '—'}</td>
                   </tr>
                 )
               })}

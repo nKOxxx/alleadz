@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { Avatar } from 'twenty-ui'
 
 // Companies = CRM companies table (Twenty-style object dashboard).
 // Inline create, twin drawer, click-through to people.
@@ -132,7 +133,15 @@ export default function Companies() {
                 {visible.map((o) => (
                   <React.Fragment key={o.id}>
                     <tr>
-                      <td><strong>{o.canonical_name}</strong>{o.aliases?.length ? <div className="count">aka {o.aliases.join(', ')}</div> : null}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Avatar name={o.canonical_name} size="sm" shape="square" colorSeed={o.id} />
+                          <div>
+                            <strong>{o.canonical_name}</strong>
+                            {o.aliases?.length ? <div className="count">aka {o.aliases.join(', ')}</div> : null}
+                          </div>
+                        </div>
+                      </td>
                       <td>{o.entity_type}</td>
                       <td>{o.country || '—'}</td>
                       <td>{o.domains?.join(', ') || '—'}</td>

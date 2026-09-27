@@ -159,3 +159,14 @@ describe('UX rebuild: additive read models', () => {
     expect(r.json.approvals).toHaveLength(0)
   })
 })
+
+describe('UX: tenant-wide contact read', () => {
+  it('GET /contacts/all returns contact points for the tenant', async () => {
+    const out = await api(ctx.base, { path: '/contacts/all', token: ctx.A.token, tenantId: ctx.A.tenantId })
+    expect(out.status).toBe(200)
+    expect(Array.isArray(out.json.contacts)).toBe(true)
+    expect(out.json.contacts.length).toBeGreaterThanOrEqual(1)
+    const r = await api(ctx.base, { path: '/contacts/all', token: ctx.R.token, tenantId: ctx.R.tenantId })
+    expect(r.json.contacts).toHaveLength(0)
+  })
+})
