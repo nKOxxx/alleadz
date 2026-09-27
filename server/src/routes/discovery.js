@@ -25,10 +25,10 @@ export function createDiscoveryRouter({ pool, fetchImpl } = {}) {
           const extracted = extractAllowed(out.snapshot)
           const saved = await withTenant(pool, req.tenantId, req.user.id, async (c) => {
             const { rows } = await c.query(
-              `INSERT INTO discovery_runs (tenant_id, organisation_id, requested_url, final_url, http_status, content_hash, bytes, extracted, status)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ok') RETURNING id`,
+              `INSERT INTO discovery_runs (tenant_id, organisation_id, requested_url, final_url, http_status, content_hash, bytes, extracted, status, run_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ok',$9) RETURNING id`,
               [req.tenantId, input.organisation_id ?? null, url, out.finalUrl, out.status, out.contentHash, out.bytes,
-               JSON.stringify(extracted)],
+               JSON.stringify(extracted), req.user.id],
             )
             await c.query(
               `INSERT INTO discovery_snapshots (tenant_id, run_id, content_hash, body) VALUES ($1,$2,$3,$4)`,

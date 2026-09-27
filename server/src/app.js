@@ -44,6 +44,7 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use('/api', createOpportunitiesRouter({ pool }))
   app.use('/api', createPeopleRouter({ pool }))
   app.use('/api', createDiscoveryRouter({ pool, fetchImpl }))
+  app.use('/api', createIntelligenceRouter({ pool }))
   app.use('/api', createPortfolioRouter({ pool }))
 
   app.use((req, res) => {
@@ -53,3 +54,4 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use(createErrorHandler(logger))
   return app
 }
+import { createIntelligenceRouter } from './routes/intelligence.js'

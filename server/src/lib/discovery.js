@@ -81,7 +81,7 @@ export function extractAllowed(snapshot) {
     .replace(/&[a-z]+;/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  if (body) out.excerpt = body.slice(0, 1000)
+  if (body) out.excerpt = body.slice(0, 8000) // 8 KB: deep enough to escape nav chrome for triage
   const typeMatch = snapshot.match(/"@type"\s*:\s*"([^"]+)"/)
   if (typeMatch) out.jsonld_type = typeMatch[1]
   for (const k of Object.keys(out)) {

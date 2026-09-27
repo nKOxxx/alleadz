@@ -47,7 +47,7 @@ A synthetic demo tenant exists on prod (registered 2026-09-27, names suffixed
 one if lost; data model supports unlimited tenants).
 
 ## Test floors (local)
-- server: `cd server && npx vitest run` → **43/43** (needs local PG on /tmp socket;
+- server: `cd server && npx vitest run` → **49/49** (needs local PG on /tmp socket;
   falls back to `DATABASE_URL`)
 - client: `cd client && npx vitest --run` → **3/3**, `npm run build` clean
 - The scratch-DB harness creates temp databases + a least-privilege
