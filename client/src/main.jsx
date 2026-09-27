@@ -6,11 +6,12 @@ import './styles.css'
 import { AuthProvider, useAuth } from './state.jsx'
 import { Login, Register } from './screens/Login.jsx'
 import Shell from './screens/Shell.jsx'
-import Organisations from './screens/Organisations.jsx'
-import ImportQueue from './screens/ImportQueue.jsx'
-import Opportunities from './screens/Opportunities.jsx'
+import Pipeline from './screens/Pipeline.jsx'
+import Companies from './screens/Companies.jsx'
+import People from './screens/People.jsx'
 import Intelligence from './screens/Intelligence.jsx'
-import Actions from './screens/Actions.jsx'
+import Imports from './screens/Imports.jsx'
+import Approvals from './screens/Approvals.jsx'
 
 function Gate({ children }) {
   const { token, ready } = useAuth()
@@ -27,12 +28,14 @@ createRoot(document.getElementById('root')).render(
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/" element={<Gate><Shell /></Gate>}>
-            <Route index element={<Opportunities />} />
-            <Route path="opportunities" element={<Opportunities />} />
+            <Route index element={<Pipeline />} />
+            <Route path="pipeline" element={<Pipeline />} />
+            <Route path="pipeline/:id" element={<Pipeline />} />
+            <Route path="companies" element={<Companies />} />
+            <Route path="people" element={<People />} />
             <Route path="intelligence" element={<Intelligence />} />
-            <Route path="organisations" element={<Organisations />} />
-            <Route path="import" element={<ImportQueue />} />
-            <Route path="actions" element={<Actions />} />
+            <Route path="imports" element={<Imports />} />
+            <Route path="approvals" element={<Approvals />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

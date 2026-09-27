@@ -270,6 +270,38 @@ export function createPeopleRouter({ pool }) {
 
   // ALPHA: no send endpoint. Export produces a human-actionable bundle bound to
   // a live (non-revoked, non-expired) approval — this IS the send gate.
+  // UX rebuild (additive): read models for the Actions dashboard.
+  // Tasks joined with their plan + approval state — one query, one screen.
+  router.get('/tasks', requireTenant({ pool }), async (req, res, next) => {
+    try {
+      const rows = await withTenant(pool, req.tenantId, req.user.id, (c) =>
+        c.query(
+          `SELECT t.*, p.title AS plan_title, p.opportunity_id,
+                  o.target_org_id, org.canonical_name AS target_name,
+                  a.id AS approval_id, a.approved_at, a.expires_at, a.revoked_at,
+                  (a.revoked_at IS NULL AND a.expires_at > now()) AS approval_live
+             FROM action_tasks t
+             JOIN action_plans p ON p.id = t.plan_id
+             JOIN opportunities o ON o.id = p.opportunity_id
+             JOIN organisations org ON org.id = o.target_org_id
+             LEFT JOIN approvals a ON a.task_id = t.id
+            ORDER BY t.created_at DESC
+            LIMIT 300`,
+        ),
+      )
+      res.json({ tasks: rows.rows })
+    } catch (e) { next(e) }
+  })
+
+  router.get('/approvals', requireTenant({ pool }), async (req, res, next) => {
+    try {
+      const rows = await withTenant(pool, req.tenantId, req.user.id, (c) =>
+        c.query('SELECT * FROM approvals ORDER BY approved_at DESC LIMIT 200'),
+      )
+      res.json({ approvals: rows.rows })
+    } catch (e) { next(e) }
+  })
+
   router.get('/tasks/:id/export', async (req, res, next) => {
     try {
       const out = await withTenant(pool, req.tenantId, req.user.id, async (c) => {

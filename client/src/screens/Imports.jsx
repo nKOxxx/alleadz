@@ -51,7 +51,7 @@ export default function ImportQueue() {
     <div>
       <div className="page-head">
         <div>
-          <h1>Import & Queue</h1>
+          <h1>Import</h1>
           <div className="sub">Upload account lists (CSV). Preview before commit. Duplicates never auto-merge — a human decides.</div>
         </div>
       </div>

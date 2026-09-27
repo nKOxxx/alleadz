@@ -138,3 +138,24 @@ describe('A11: full alpha demonstration on one real record', () => {
     expect(list.json.people).toHaveLength(0)
   })
 })
+
+describe('UX rebuild: additive read models', () => {
+  it('GET /tasks returns task rows enriched with plan/target/approval state', async () => {
+    const out = await api(ctx.base, { path: '/tasks', token: ctx.A.token, tenantId: ctx.A.tenantId })
+    expect(out.status).toBe(200)
+    expect(Array.isArray(out.json.tasks)).toBe(true)
+    expect(out.json.tasks.length).toBeGreaterThanOrEqual(1)
+    const row = out.json.tasks[0]
+    for (const key of ['plan_title', 'opportunity_id', 'target_name', 'approval_id', 'expires_at']) {
+      expect(row).toHaveProperty(key)
+    }
+  })
+
+  it('GET /approvals lists approvals and RLS hides other tenants', async () => {
+    const a = await api(ctx.base, { path: '/approvals', token: ctx.A.token, tenantId: ctx.A.tenantId })
+    expect(a.status).toBe(200)
+    expect(a.json.approvals.length).toBeGreaterThanOrEqual(1)
+    const r = await api(ctx.base, { path: '/approvals', token: ctx.R.token, tenantId: ctx.R.tenantId })
+    expect(r.json.approvals).toHaveLength(0)
+  })
+})

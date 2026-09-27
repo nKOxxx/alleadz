@@ -1,19 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.js'
 
-const CAP_STATUS = ['claimed', 'evidenced', 'reviewed', 'expired']
-
-export default function Organisations() {
+// Companies = CRM companies table (Twenty-style object dashboard).
+// Inline create, twin drawer, click-through to people.
+export default function Companies() {
   const [orgs, setOrgs] = useState(null)
   const [total, setTotal] = useState(0)
   const [limit, setLimit] = useState(50)
   const [offset, setOffset] = useState(0)
   const [err, setErr] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [q, setQ] = useState('')
 
-  // org form
   const [form, setForm] = useState({ canonical_name: '', entity_type: 'buyer', domains: '', country: '' })
-  // twin form (per selected org)
   const [twinOrg, setTwinOrg] = useState(null)
   const [twinForm, setTwinForm] = useState({ offering: false, mandate: '', capabilities: '' })
   const [twins, setTwins] = useState({})
@@ -75,34 +74,42 @@ export default function Organisations() {
     } catch (ex) { setErr(ex.message) }
   }
 
+  const visible = (orgs || []).filter((o) =>
+    !q.trim() || o.canonical_name.toLowerCase().includes(q.trim().toLowerCase()))
+
   return (
     <div>
       <div className="page-head">
         <div>
-          <h1>Organisations</h1>
-          <div className="sub">Canonical entities. Twins attach to organisations; versions are immutable.</div>
+          <h1>Companies</h1>
+          <div className="sub">Every organisation you track — targets, providers, partners.</div>
         </div>
-        <button className="btn" onClick={() => setShowForm(!showForm)}>{showForm ? 'Close' : '+ Add organisation'}</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input style={{ width: 200 }} placeholder="Filter by name…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className="btn" onClick={() => setShowForm(!showForm)}>{showForm ? 'Close' : '+ Company'}</button>
+        </div>
       </div>
       {err && <div className="error">{err}</div>}
 
       {showForm && (
         <div className="card">
-          <h2>New organisation</h2>
+          <h2>New company</h2>
           <form onSubmit={createOrg}>
-            <label>Canonical name</label>
-            <input required value={form.canonical_name} onChange={(e) => setForm({ ...form, canonical_name: e.target.value })} placeholder="Exact legal or trading name" />
-            <label>Type</label>
-            <select value={form.entity_type} onChange={(e) => setForm({ ...form, entity_type: e.target.value })}>
-              <option value="buyer">Buyer / target</option>
-              <option value="provider">Provider</option>
-              <option value="partner">Partner</option>
-              <option value="other">Other</option>
-            </select>
+            <div className="form-row">
+              <div><label>Name</label>
+                <input required value={form.canonical_name} onChange={(e) => setForm({ ...form, canonical_name: e.target.value })} placeholder="Exact legal or trading name" /></div>
+              <div><label>Type</label>
+                <select value={form.entity_type} onChange={(e) => setForm({ ...form, entity_type: e.target.value })}>
+                  <option value="buyer">Buyer / target</option>
+                  <option value="provider">Provider</option>
+                  <option value="partner">Partner</option>
+                  <option value="other">Other</option>
+                </select></div>
+              <div><label>Country</label>
+                <input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} placeholder="United Arab Emirates" /></div>
+            </div>
             <label>Domains (comma-separated)</label>
             <input value={form.domains} onChange={(e) => setForm({ ...form, domains: e.target.value })} placeholder="example.com, example.ae" />
-            <label>Country</label>
-            <input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} placeholder="United Arab Emirates" />
             <div style={{ marginTop: 12 }}>
               <button className="btn">Create</button>
             </div>
@@ -113,16 +120,16 @@ export default function Organisations() {
       <div className="card">
         {orgs === null ? (
           <div className="empty">Loading…</div>
-        ) : orgs.length === 0 ? (
-          <div className="empty">No organisations yet. Add your first target — or create the offering organisation and attach a seller twin to it.</div>
+        ) : visible.length === 0 ? (
+          <div className="empty">{q ? 'No matches.' : 'No companies yet — add one, or just type an idea on the left; the company is created for you.'}</div>
         ) : (
           <>
-            <table>
+            <table className="rows">
               <thead>
-                <tr><th>Organisation</th><th>Type</th><th>Country</th><th>Domains</th><th></th></tr>
+                <tr><th>Company</th><th>Type</th><th>Country</th><th>Domains</th><th></th></tr>
               </thead>
               <tbody>
-                {orgs.map((o) => (
+                {visible.map((o) => (
                   <React.Fragment key={o.id}>
                     <tr>
                       <td><strong>{o.canonical_name}</strong>{o.aliases?.length ? <div className="count">aka {o.aliases.join(', ')}</div> : null}</td>
@@ -149,7 +156,7 @@ export default function Organisations() {
                               </label>
                               <label>Mandate / objectives</label>
                               <textarea rows={2} value={twinForm.mandate} onChange={(e) => setTwinForm({ ...twinForm, mandate: e.target.value })} placeholder="e.g. Originate GPU compute demand from GCC AI companies" />
-                              <label>Capabilities (one per line, status starts as claimed)</label>
+                              <label>Capabilities (one per line)</label>
                               <textarea rows={2} value={twinForm.capabilities} onChange={(e) => setTwinForm({ ...twinForm, capabilities: e.target.value })} placeholder={"GPU compute brokerage\nGCC market access"} />
                               <div style={{ marginTop: 10 }}>
                                 <button className="btn small">Create twin (v1)</button>
@@ -164,7 +171,7 @@ export default function Organisations() {
               </tbody>
             </table>
             <div className="count" style={{ marginTop: 10 }}>
-              Showing {orgs.length} of {total}
+              Showing {visible.length} of {total}
               {offset > 0 && <> · <button className="btn secondary small" onClick={() => setOffset(Math.max(0, offset - limit))}>Prev</button></>}
               {offset + orgs.length < total && <> · <button className="btn secondary small" onClick={() => setOffset(offset + limit)}>Next</button></>}
             </div>
