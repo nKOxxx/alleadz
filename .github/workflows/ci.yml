@@ -43,6 +43,10 @@ jobs:
             [ "$i" = 30 ] && { echo "postgres never became ready"; exit 1; }
             sleep 1
           done
+          # the harness's admin connection is libpq-default (OS user) over the socket;
+          # mirror the dev machine where that role exists as superuser. The APP pool
+          # still connects as the non-superuser alleadz_app role (harness creates it).
+          sudo -u postgres psql -h /tmp -c "CREATE ROLE \"runner\" LOGIN SUPERUSER" 2>/dev/null || true
 
       - uses: actions/setup-node@54337e0d02de9202d0948aaff36ad556375497b9 # main (2026-10-02)
         with:
