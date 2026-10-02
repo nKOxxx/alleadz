@@ -37,6 +37,10 @@ jobs:
           # single socket dir, set at cluster level (pg_ctlcluster parses this key itself,
           # so avoid multi-value lists in postgresql.conf)
           sudo pg_conftool "/etc/postgresql/${PGVER}/main/postgresql.conf" set unix_socket_directories '/tmp'
+          # harness connects the app role with a password over the socket; ubuntu's
+          # default pg_hba uses peer for local, which would reject it. Trust on the
+          # runner-local socket only (CI throwaway box).
+          sudo sed -i 's/^local\s\+all\s\+all\s\+peer/local   all             all                                     trust/' "/etc/postgresql/${PGVER}/main/pg_hba.conf"
           sudo pg_ctlcluster "$PGVER" main start
           for i in $(seq 1 30); do
             if pg_isready -h /tmp -p 5432; then break; fi
