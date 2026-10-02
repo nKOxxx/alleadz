@@ -4,28 +4,20 @@ jobs:
   secrets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v6.0.0
         with: { fetch-depth: 0 } # FULL history scan
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # tag v2 (2026-10-02)
         env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
   deps:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v6.0.0
+      - uses: actions/setup-node@54337e0d02de9202d0948aaff36ad556375497b9 # main (2026-10-02)
         with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
       - run: npm ci
         working-directory: server
       - run: npm audit --omit=dev --audit-level=high
         working-directory: server
-  tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: server/package-lock.json }
-      - run: npm ci
-        working-directory: server
-      - run: npm test
-        working-directory: server
-        env: { DATABASE_URL: "" } # suites that need a DB self-skip; pure-unit run must stay green
+# (tests job removed 2026-10-02: redundant with ci.yml's server job, and its
+#  "DATABASE_URL='' self-skip" contract never held for the unguarded beforeAll files
+#  — first push exposed it. The real suite lives in ci.yml with a role-separated postgres.)

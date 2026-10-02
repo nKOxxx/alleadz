@@ -1,8 +1,11 @@
-# Alleadz CI — server (vitest + scratch PG) + client (vitest) + client build gate
+# Alleadz CI — server (vitest + scratch PG via /tmp socket) + client (vitest) + build gate
 # Generated from github-actions-cicd skill templates (2026-10-02)
-# Laws applied: least-privilege permissions, pinned SHAs, timeout-minutes, enumerated jobs.
-# The suite needs a real Postgres (scratch-db per run) → service container with an
-# admin-capable superuser for the harness, matching local `npm test` usage.
+# Laws applied: least-privilege permissions, pinned SHAs, timeout-minutes, role separation.
+# The scratch-db harness models prod (app connects as non-superuser `alleadz_app` role so
+# FORCE RLS bites) ONLY when a Postgres unix socket exists at /tmp/.s.PGSQL.5432. So we run
+# a real server-side postgres on the runner (socket in /tmp), not a docker service —
+# otherwise the harness falls back to a superuser connection and the harness-law test
+# correctly fails (caught on the first CI run, kept as the guard).
 
 name: CI
 
@@ -19,23 +22,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v6.0.0
         with:
           persist-credentials: false
+
+      - name: Install Postgres (server listening on /tmp socket, trust auth)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql
+          sudo pg_ctlcluster 16 main start 2>/dev/null || sudo service postgresql start
+          # point the socket at /tmp as the harness expects
+          sudo -u postgres sed -i "s|^#unix_socket_directories.*|unix_socket_directories = '/tmp', '/var/run/postgresql'|" /etc/postgresql/16/main/postgresql.conf
+          sudo pg_ctlcluster 16 main restart
+          until pg_isready -h /tmp; do sleep 1; done
 
       - uses: actions/setup-node@54337e0d02de9202d0948aaff36ad556375497b9 # main (2026-10-02)
         with:
@@ -47,11 +47,9 @@ jobs:
         run: npm ci
         working-directory: server
 
-      - name: Tests (scratch-db harness)
+      - name: Tests (scratch-db harness, role-separated)
         run: npm test
         working-directory: server
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
 
   client:
     runs-on: ubuntu-latest
