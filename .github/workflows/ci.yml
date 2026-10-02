@@ -33,10 +33,10 @@ jobs:
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql
           PGVER="$(ls /etc/postgresql | head -1)"
-          # init a cluster if apt didn't, then point its socket at /tmp BEFORE first start
           sudo pg_createcluster "$PGVER" main --start-conf auto 2>/dev/null || true
-          PGCONF="/etc/postgresql/${PGVER}/main/postgresql.conf"
-          echo "unix_socket_directories = '/tmp', '/var/run/postgresql'" | sudo tee -a "$PGCONF" >/dev/null
+          # single socket dir, set at cluster level (pg_ctlcluster parses this key itself,
+          # so avoid multi-value lists in postgresql.conf)
+          sudo pg_conftool "/etc/postgresql/${PGVER}/main/postgresql.conf" set unix_socket_directories '/tmp'
           sudo pg_ctlcluster "$PGVER" main start
           for i in $(seq 1 30); do
             if pg_isready -h /tmp -p 5432; then break; fi
