@@ -61,6 +61,12 @@ jobs:
       - name: Tests (scratch-db harness, role-separated)
         run: npm test
         working-directory: server
+        # pool.js creates a module-level defaultPool at import time, which requires
+        # DATABASE_URL even though createScratchDb connects to its own scratch DBs.
+        # Socket URL = admin/owner connection (peer auth as 'runner'); the APP pool
+        # still uses the non-superuser alleadz_app role the harness creates.
+        env:
+          DATABASE_URL: postgresql:///postgres?host=/tmp
 
   client:
     runs-on: ubuntu-latest
