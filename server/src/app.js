@@ -9,6 +9,9 @@
 // require X-Tenant-Id with verified membership (middleware/auth.js).
 
 import express from 'express'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createErrorHandler } from './lib/errors.js'
 import { securityHeaders } from './middleware/security-headers.js'
 import { createRateLimiter, createAuthRateLimiter } from './middleware/rate-limit.js'
@@ -46,6 +49,53 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use('/api', createDiscoveryRouter({ pool, fetchImpl }))
   app.use('/api', createIntelligenceRouter({ pool }))
   app.use('/api', createPortfolioRouter({ pool }))
+
+  // ---- static client (v1.0) ------------------------------------------------
+  // Serve the built SPA from ../client/dist when present (same-origin, so the
+  // client's relative /api + /auth fetches just work — no CORS). Absent dist
+  // (fresh clones, tests) -> behavior unchanged: 404 JSON, exactly as before.
+  const clientDist = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)), '../../client/dist')
+  if (fs.existsSync(path.join(clientDist, 'index.html'))) {
+    // The global API-grade CSP (default-src 'none') would block the SPA's module
+    // script, stylesheet and same-origin fetches. Serve a real app CSP on the
+    // shell + assets instead; API/auth routes keep the hardened default below.
+    const SPA_CSP = [
+      "default-src 'self'",
+      // vite builds emit no inline scripts; React Router needs connect-src self,
+      // twenty-ui toasts use inline styles, fontsource ships self-hosted fonts.
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ')
+    const shellCsp = (req, res, next) => {
+      res.setHeader('Content-Security-Policy', SPA_CSP)
+      next()
+    }
+    app.use(express.static(clientDist, {
+      index: 'index.html',
+      maxAge: '1h',
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Content-Security-Policy', SPA_CSP)
+          res.setHeader('Cache-Control', 'no-store')
+        }
+      },
+    }))
+    // SPA fallback: any non-API GET serves the shell so client-side routes deep-link.
+    app.get('*', shellCsp, (req, res, next) => {
+      if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path === '/health') {
+        return next()
+      }
+      res.setHeader('Cache-Control', 'no-store')
+      res.sendFile(path.join(clientDist, 'index.html'))
+    })
+  }
 
   app.use((req, res) => {
     res.status(404).json({ error: { code: 'not_found', message: 'Unknown route' } })

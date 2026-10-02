@@ -1,0 +1,81 @@
+# Alleadz CI — server (vitest + scratch PG) + client (vitest) + client build gate
+# Generated from github-actions-cicd skill templates (2026-10-02)
+# Laws applied: least-privilege permissions, pinned SHAs, timeout-minutes, enumerated jobs.
+# The suite needs a real Postgres (scratch-db per run) → service container with an
+# admin-capable superuser for the harness, matching local `npm test` usage.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v6.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@54337e0d02de9202d0948aaff36ad556375497b9 # main (2026-10-02)
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: server
+
+      - name: Tests (scratch-db harness)
+        run: npm test
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+
+  client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v6.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@54337e0d02de9202d0948aaff36ad556375497b9 # main (2026-10-02)
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: client
+
+      - name: Unit tests
+        run: npm test
+        working-directory: client
+
+      - name: Build gate
+        run: npm run build
+        working-directory: client

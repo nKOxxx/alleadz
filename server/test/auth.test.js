@@ -48,6 +48,11 @@ describe.skipIf(!usingRealDatabase())('auth + tenancy (P1)', () => {
       method: 'POST', path: '/auth/login', body: { email: 'a@t1.test', password: 'password123' },
     })
     expect(login.status).toBe(200)
+    // v1.0 contract (found by real-UI E2E): login returns the caller's workspace so the
+    // SPA can set X-Tenant-Id immediately. Login without tenant = dead shell.
+    expect(login.json.tenant).toBeTruthy()
+    expect(login.json.tenant.id).toBeTruthy()
+    expect(login.json.tenant.name).toBe('Tenant One')
 
     const bad = await api(ctx.base, {
       method: 'POST', path: '/auth/login', body: { email: 'a@t1.test', password: 'wrongpassword' },

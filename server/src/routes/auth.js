@@ -94,9 +94,27 @@ export function createAuthRouter({ pool }) {
         return
       }
       const session = await createSession(pool, user.id)
+      // v1.0 fix: login must return the caller's workspace. Without it the SPA
+      // lands on / with no tenant in localStorage and every tenant fetch 401s
+      // (found by real-UI E2E). Resolve memberships server-side; single-membership
+      // users (the v1.0 norm) get it inline. Multi-tenant users can switch later
+      // via switchTenant; empty membership returns null and the UI shows a
+      // "no workspace" state rather than a dead shell.
+      const { rows: memberRows } = await withNoTenant(pool, (c) =>
+        c.query(
+          `SELECT t.id, t.name
+             FROM tenant_members m
+             JOIN tenants t ON t.id = m.tenant_id
+            WHERE m.user_id = $1
+            ORDER BY t.created_at
+            LIMIT 1`,
+          [user.id],
+        ),
+      )
       res.json({
         token: session.token,
         user: { id: user.id, email: input.email, emailVerified: !!user.email_verified_at },
+        tenant: memberRows[0] ?? null,
       })
     } catch (err) {
       next(err)

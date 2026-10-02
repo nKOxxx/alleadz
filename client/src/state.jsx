@@ -20,6 +20,7 @@ export function AuthProvider({ children }) {
     async login(email, password) {
       const out = await api('/auth/login', { method: 'POST', body: { email, password } })
       setToken(out.token); setTok(out.token)
+      if (out.tenant) { setTenant(out.tenant); setTen(out.tenant) }
       return out
     },
     async register(email, password, workspaceName) {
