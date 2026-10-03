@@ -60,7 +60,7 @@ one if lost; data model supports unlimited tenants).
   no paid hosting). Prod keeps direct transport.
 
 ## Test floors (local)
-- server: `cd server && npx vitest run` → **58/58** (needs local PG on /tmp socket;
+- server: `cd server && npx vitest run` → **76/76** (needs local PG on /tmp socket;
   falls back to `DATABASE_URL`)
 - client: `cd client && npx vitest --run` → **3/3**, `npm run build` clean
 - The scratch-DB harness creates temp databases + a least-privilege
@@ -69,9 +69,24 @@ one if lost; data model supports unlimited tenants).
 ## Retention analytics (2026-10-03)
 - `events` table (migration 0006) records: auth.registered, discovery.run,
   discovery.analyze, signal.promoted, bundle.exported (value action).
+- Migration 0007 adds `vertical.applied` (lane commitment) + the verticals
+  surface (see "Vertical lanes" below).
 - Weekly cohort report: `cd server && DATABASE_URL="$(cat /tmp/sg_render_ext.txt)" \
   node scripts/weekly-cohorts.mjs` — prints registration cohorts (d7/d30
-  first-export) + event funnel. Best-effort emission never breaks actions.
+  first-export) with lane column, event funnel, and the per-lane A/B funnel.
+  Best-effort emission never breaks actions.
+
+## Vertical lanes (2026-10-03, blueprint-audit fix 4)
+- Two curated lanes in `server/src/lib/verticals.js` (specs in `verticals/`):
+  `bank-frick` (New Ventures client acquisition: professional market
+  participants with digital-asset exposure; ≥ USD 1M expected deposit; no
+  sanctioned countries, no LatAm; retail excluded) and `own-products`
+  (paying customers for Nybls/Sovereign Grid/GulfWatch/KONTOR).
+- One active lane per tenant (the A/B unit is the tenant).
+  `POST /api/verticals/apply {lane}` seeds the mandate twin + preset and
+  emits `vertical.applied`. `GET /api/verticals` lists the catalog.
+- The lane gate runs inside rubric hard checks (`lane_gate`): excluded
+  countries + min-deposit floor fail qualification deterministically.
 
 ## Local demo stack (screenshot/QA runs)
 - Local server MUST use the `alleadz_app` role, never superuser: Postgres
