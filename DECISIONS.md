@@ -50,3 +50,11 @@ User directive: use twentyhq/twenty as the basis for the CRM part. Decision (use
   both flagged zero instrumentation; blueprint Phase 4 law is "instrument
   BEFORE promotion". Zero tenants today = nothing lost, cheapest moment.
 - **Not decided here:** beachhead vertical (owner call, pending).
+
+2026-10-03 — Vertical lanes A/B (blueprint-audit fix 4). Two curated presets:
+`bank-frick` (New Ventures client acquisition; >= USD 1M expected deposit;
+sanctioned countries + Latin America excluded; retail excluded; 7 client
+classes) and `own-products` (paying customers for Nybls / Sovereign Grid /
+GulfWatch / KONTOR). One active lane per tenant — the A/B unit is the tenant;
+funnels compare across lanes via the weekly cohort report (per-lane section).
+Lane gate is a deterministic rubric hard check. New event: vertical.applied.

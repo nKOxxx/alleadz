@@ -46,7 +46,8 @@ SELECT
   count(*) FILTER (WHERE event_type = 'discovery.run')            AS n_discovery_run,
   count(*) FILTER (WHERE event_type = 'discovery.analyze')        AS n_analyze,
   count(*) FILTER (WHERE event_type = 'signal.promoted')          AS n_promoted,
-  count(*) FILTER (WHERE event_type = 'bundle.exported')          AS n_exported
+  count(*) FILTER (WHERE event_type = 'bundle.exported')          AS n_exported,
+  count(*) FILTER (WHERE event_type = 'vertical.applied')         AS n_lane_applied
  FROM events`
 
 const FUNNEL_COLUMNS = {
@@ -55,6 +56,7 @@ const FUNNEL_COLUMNS = {
   'discovery.analyze': 'n_analyze',
   'signal.promoted': 'n_promoted',
   'bundle.exported': 'n_exported',
+  'vertical.applied': 'n_lane_applied',
 }
 
 function week(date) {
@@ -75,8 +77,9 @@ try {
     const { rows: tenants } = await client.query(TENANTS_SQL)
     console.error(`context: ${tenants.length} tenant(s)`)
 
-    const cohortRows = [] // {cohort_week, promoted, exported, d7, d30}
-    const funnel = { 'auth.registered': 0, 'discovery.run': 0, 'discovery.analyze': 0, 'signal.promoted': 0, 'bundle.exported': 0 }
+    const cohortRows = [] // {cohort_week, lane, promoted, exported, d7, d30}
+    const laneFunnel = {} // lane -> {registered, run, analyze, promoted, exported, applied}
+    const funnel = { 'auth.registered': 0, 'discovery.run': 0, 'discovery.analyze': 0, 'signal.promoted': 0, 'bundle.exported': 0, 'vertical.applied': 0 }
 
     let i = 0
     for (const t of tenants) {
@@ -92,9 +95,20 @@ try {
         const { rows } = await client.query(TENANT_EVENTS_SQL)
         const e = rows[0]
         for (const [type, col] of Object.entries(FUNNEL_COLUMNS)) funnel[type] += Number(e[col] ?? 0)
+        // lane for the A/B view (best-effort: '—' if unreadable)
+        let lane = '—'
+        try {
+          const lr = await client.query(`SELECT lane FROM tenants WHERE id = $1`, [t.tenant_id])
+          lane = lr.rows[0]?.lane ?? '—'
+        } catch { /* keep placeholder */ }
+        laneFunnel[lane] = laneFunnel[lane] ?? { registered: 0, run: 0, analyze: 0, promoted: 0, exported: 0, applied: 0 }
+        for (const [type, col] of Object.entries(FUNNEL_COLUMNS)) {
+          laneFunnel[lane][{ 'auth.registered': 'registered', 'discovery.run': 'run', 'discovery.analyze': 'analyze', 'signal.promoted': 'promoted', 'bundle.exported': 'exported', 'vertical.applied': 'applied' }[type]] += Number(e[col] ?? 0)
+        }
         if (e.registered_at) {
           cohortRows.push({
             cohort_week: week(e.registered_at),
+            lane,
             promoted: e.first_promote ? 1 : 0,
             exported: e.first_export ? 1 : 0,
             d7: e.first_export && daysBetween(e.registered_at, e.first_export) <= 7 ? 1 : 0,
@@ -111,26 +125,38 @@ try {
     // aggregate per-tenant rows into weekly cohorts
     const weeks = new Map()
     for (const r of cohortRows) {
-      const w = weeks.get(r.cohort_week) ?? { tenants: 0, promoted: 0, exported: 0, d7: 0, d30: 0 }
+      const w = weeks.get(r.cohort_week) ?? { tenants: 0, promoted: 0, exported: 0, d7: 0, d30: 0, lanes: {} }
       w.tenants++; w.promoted += r.promoted; w.exported += r.exported
       w.d7 += r.d7; w.d30 += r.d30
+      w.lanes[r.lane] = (w.lanes[r.lane] ?? 0) + 1
       weeks.set(r.cohort_week, w)
     }
 
+    const laneTag = (m) => Object.entries(m).map(([k, n]) => `${k}\u00d7${n}`).join(' ') || '\u2014'
     console.log('Weekly registration cohorts (value action = first bundle export)')
-    console.log('cohort_week | tenants | promoted | exported |  d7 |  d30')
-    console.log('------------+---------+----------+----------+-----+-----')
+    console.log('cohort_week | tenants | promoted | exported |  d7 |  d30 | lane(s)')
+    console.log('------------+---------+----------+----------+-----+------+---------')
     if (!weeks.size) console.log('(no registration events yet)')
     for (const [wk, w] of [...weeks.entries()].sort()) {
       console.log(
         `${wk} | ${String(w.tenants).padStart(7)} | ${String(w.promoted).padStart(8)} |` +
         ` ${String(w.exported).padStart(8)} | ${pct(w.d7, w.tenants).padStart(3)} |` +
-        ` ${pct(w.d30, w.tenants).padStart(3)}`,
+        ` ${pct(w.d30, w.tenants).padStart(4)} | ${laneTag(w.lanes)}`,
       )
     }
     console.log('\nEvent funnel (all time, summed across tenants)')
     for (const [type, n] of Object.entries(funnel)) {
       console.log(`  ${type.padEnd(18)} ${String(n).padStart(6)} events`)
+    }
+    console.log('\nPer-lane funnel (the A/B view)')
+    console.log('lane | registered | run | analyze | promoted | exported | lane.applied')
+    console.log('-----+------------+-----+---------+----------+----------+--------------')
+    for (const [lane, f] of Object.entries(laneFunnel)) {
+      console.log(
+        `${lane.padEnd(14)} | ${String(f.registered).padStart(10)} | ${String(f.run).padStart(3)} |` +
+        ` ${String(f.analyze).padStart(7)} | ${String(f.promoted).padStart(8)} |` +
+        ` ${String(f.exported).padStart(8)} | ${String(f.applied).padStart(12)}`,
+      )
     }
   } finally {
     client.release()

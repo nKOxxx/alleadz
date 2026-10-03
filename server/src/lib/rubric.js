@@ -1,5 +1,6 @@
 // server/src/lib/rubric.js — deterministic scoring + hard checks. NO LLM.
 // Weights per spec §9. rule_version bumps whenever scoring law changes.
+import { laneKeyOf, runLaneGate } from './verticals.js'
 
 export const RUBRIC_WEIGHTS = Object.freeze({
   fit: 35, trigger: 25, timing: 15, budget: 15, access: 10,
@@ -65,6 +66,13 @@ export function runHardChecks({ mandate, permittedMarkets = [], excludedMarkets 
   const dq = targetClaims.disqualifiers || []
   if (dq.length) checks.push({ name: 'disqualifiers', verdict: 'fail', detail: `target flagged: ${dq.join('; ')}` })
   else checks.push({ name: 'disqualifiers', verdict: 'pass', detail: 'none on record' })
+
+  // vertical lane gate (fix 4): sanctions/LATAM exclusions + min-deposit floor,
+  // derived from the active preset key on the twin's constraints
+  const laneKey = laneKeyOf(mandate)
+  if (laneKey) {
+    checks.push(runLaneGate(laneKey, targetClaims))
+  }
 
   // procurement eligibility claim
   if (targetClaims.procurement_eligible === true) checks.push({ name: 'procurement', verdict: 'pass', detail: 'eligible per claim' })

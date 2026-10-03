@@ -31,6 +31,10 @@ extraction (no LLM in scoring) → thesis → human approval → export bundle.
 - `GET  /api/signals/:id` → signal with resolved sources + claims
 - `POST /api/signals/:id/promote` → sourced_fact claim (refuses evidence-free: 409)
 - `GET  /api/tasks/:id/export` → manual-send bundle (409 without live approval)
+- `GET  /api/verticals` → curated lane catalog (bank-frick | own-products)
+- `POST /api/verticals/apply` `{lane}` → set tenant lane + seed mandate twin;
+  emits `vertical.applied`. One active lane per tenant (A/B unit = tenant).
+  Lane gate: excluded geos + min-deposit floor fail rubric qualification.
 
 Contracts are ADDITIVE only (see CONTRACTS.md). Value action measured:
 first successful export per tenant (retention law, DECISIONS.md 2026-10-03).

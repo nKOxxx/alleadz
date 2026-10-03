@@ -3,8 +3,9 @@
 // and never blocks the action it observes: a broken analytics path must not
 // break the product. Failures are logged once and swallowed.
 //
-// Event types are a closed set (CHECK constraint in 0006_usage_events.sql):
+// Event types are a closed set (CHECK constraint in 0006/0007):
 //   auth.registered | discovery.run | discovery.analyze | signal.promoted | bundle.exported
+//   vertical.applied (lane commitment — 0007_verticals.sql)
 // Value action: bundle.exported (retention "Aha"); leading indicator: signal.promoted.
 
 const KNOWN = new Set([
@@ -13,6 +14,7 @@ const KNOWN = new Set([
   'discovery.analyze',
   'signal.promoted',
   'bundle.exported',
+  'vertical.applied',
 ])
 
 /**

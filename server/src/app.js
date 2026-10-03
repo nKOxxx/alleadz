@@ -22,6 +22,7 @@ import { createOpportunitiesRouter } from './routes/opportunities.js'
 import { createPeopleRouter } from './routes/people.js'
 import { createDiscoveryRouter } from './routes/discovery.js'
 import { createPortfolioRouter } from './routes/portfolio.js'
+import { createVerticalsRouter } from './routes/verticals.js'
 
 export function createApp({ pool, logger = console, rateLimits = true, fetchImpl } = {}) {
   if (!pool) throw new Error('createApp requires a pg pool')
@@ -49,6 +50,7 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use('/api', createDiscoveryRouter({ pool, fetchImpl }))
   app.use('/api', createIntelligenceRouter({ pool }))
   app.use('/api', createPortfolioRouter({ pool }))
+  app.use('/api', createVerticalsRouter({ pool }))
 
   // ---- static client (v1.0) ------------------------------------------------
   // Serve the built SPA from ../client/dist when present (same-origin, so the
