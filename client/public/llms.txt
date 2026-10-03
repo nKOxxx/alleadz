@@ -1,0 +1,36 @@
+> Alleadz — Intelligence to Opportunity
+> Agent-readable surface. Humans: see MISSION.md. Products laws: DECISIONS.md.
+
+## What Alleadz is
+
+An intelligence-to-opportunity OS: capture public intelligence → deterministic
+extraction (no LLM in scoring) → thesis → human approval → export bundle.
+**The system never sends.** The last mile is always a named human.
+
+## Canonical URLs
+
+- App: https://alleadz.onrender.com
+- Health: https://alleadz.onrender.com/api/health → {"ok":true}
+- Repo: https://github.com/nKOxxx/alleadz
+
+## Product laws (binding for humans and agents)
+
+1. No LLM anywhere in scoring/triage — deterministic rubric only.
+2. Cite-or-hypothesis: claims carry sources or are labeled `Hypothesis:`.
+3. The system never sends; approve → bind → export; humans send.
+4. Immutable thesis versions; server-enforced opportunity stage machine.
+5. Tenant isolation via Postgres RLS is absolute.
+6. License law: MIT/BSD only; AGPL and Enterprise-licensed code never vendored.
+
+## API surface (tenant-scoped; bearer token + X-Tenant-Id)
+
+- `POST /api/auth/register` → `{token, user, tenant}`
+- `POST /api/auth/login` → `{token, user, tenant}`
+- `POST /api/discovery/run` `{urls, stealth?}` → per-URL run results
+- `POST /api/discovery/analyze` `{run_id}` → signal + findings + research tasks
+- `GET  /api/signals/:id` → signal with resolved sources + claims
+- `POST /api/signals/:id/promote` → sourced_fact claim (refuses evidence-free: 409)
+- `GET  /api/tasks/:id/export` → manual-send bundle (409 without live approval)
+
+Contracts are ADDITIVE only (see CONTRACTS.md). Value action measured:
+first successful export per tenant (retention law, DECISIONS.md 2026-10-03).

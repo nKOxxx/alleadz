@@ -36,3 +36,17 @@ User directive: use twentyhq/twenty as the basis for the CRM part. Decision (use
 - **Deployment:** sidecar is local/dev-only (Render free tier = single service;
   no paid hosting). Prod uses direct transport until a second free-tier
   service (e.g. Fly) is justified.
+
+## 2026-10-03 — Retention instrumentation: events table + value-action definition
+- **Decision:** Every tenant-measurable action writes a row to `events`
+  (migration 0006): `auth.registered`, `discovery.run`, `discovery.analyze`,
+  `signal.promoted`, `bundle.exported`. Emission is best-effort and never
+  fails the action it observes (`server/src/lib/events.js`).
+- **Value action (Lieb retention law):** a tenant has received value when it
+  **exports its first bundle** (`GET /api/tasks/:id/export` → 200 →
+  `bundle.exported` event). Leading indicator: first `signal.promoted`.
+  Weekly cohort curves are computed from these rows (never aggregates).
+- **Why now:** founder-doctrine audit (2026-10-03) + Grok-blueprint audit
+  both flagged zero instrumentation; blueprint Phase 4 law is "instrument
+  BEFORE promotion". Zero tenants today = nothing lost, cheapest moment.
+- **Not decided here:** beachhead vertical (owner call, pending).

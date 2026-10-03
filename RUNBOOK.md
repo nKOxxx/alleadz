@@ -60,11 +60,18 @@ one if lost; data model supports unlimited tenants).
   no paid hosting). Prod keeps direct transport.
 
 ## Test floors (local)
-- server: `cd server && npx vitest run` → **50/50** (needs local PG on /tmp socket;
+- server: `cd server && npx vitest run` → **58/58** (needs local PG on /tmp socket;
   falls back to `DATABASE_URL`)
 - client: `cd client && npx vitest --run` → **3/3**, `npm run build` clean
 - The scratch-DB harness creates temp databases + a least-privilege
   `alleadz_app` role locally; it never touches Render.
+
+## Retention analytics (2026-10-03)
+- `events` table (migration 0006) records: auth.registered, discovery.run,
+  discovery.analyze, signal.promoted, bundle.exported (value action).
+- Weekly cohort report: `cd server && DATABASE_URL="$(cat /tmp/sg_render_ext.txt)" \
+  node scripts/weekly-cohorts.mjs` — prints registration cohorts (d7/d30
+  first-export) + event funnel. Best-effort emission never breaks actions.
 
 ## Local demo stack (screenshot/QA runs)
 - Local server MUST use the `alleadz_app` role, never superuser: Postgres

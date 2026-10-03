@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { requireAuth, requireTenant, requireRole } from '../middleware/auth.js'
 import { withTenant } from '../db/pool.js'
 import { boundedFetch, extractAllowed, DISCOVERY_LIMITS } from '../lib/discovery.js'
+import { trackEvent } from '../lib/events.js'
 
 const runSchema = z.object({
   organisation_id: z.string().uuid().nullable().optional(),
@@ -80,6 +81,11 @@ export function createDiscoveryRouter({ pool, fetchImpl } = {}) {
               `INSERT INTO discovery_snapshots (tenant_id, run_id, content_hash, body) VALUES ($1,$2,$3,$4)`,
               [req.tenantId, rows[0].id, out.contentHash, out.snapshot],
             )
+            await trackEvent(c, req.tenantId, 'discovery.run', {
+              actorUserId: req.user.id,
+              objectId: rows[0].id,
+              metadata: { url, status: 'ok', via, http_status: out.status },
+            })
             return rows[0].id
           })
           results.push({ url, run_id: saved, status: 'ok', http_status: out.status, via, extracted })
@@ -91,6 +97,10 @@ export function createDiscoveryRouter({ pool, fetchImpl } = {}) {
                VALUES ($1,$2,$3,$4,$5,$6)`,
               [req.tenantId, input.organisation_id ?? null, url, blocked ? 'blocked' : 'failed', err.message, req.user.id],
             )
+            await trackEvent(c, req.tenantId, 'discovery.run', {
+              actorUserId: req.user.id,
+              metadata: { url, status: blocked ? 'blocked' : 'failed' },
+            })
           })
           results.push({ url, status: blocked ? 'blocked' : 'failed', error: err.message })
         }
