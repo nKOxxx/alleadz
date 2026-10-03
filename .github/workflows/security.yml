@@ -1,5 +1,8 @@
 name: security
 on: [pull_request, push]
+permissions:
+  contents: read
+  pull-requests: read # gitleaks-action fetches PR commits via the API on pull_request events
 jobs:
   secrets:
     runs-on: ubuntu-latest

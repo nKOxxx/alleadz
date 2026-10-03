@@ -6,6 +6,7 @@ import express from 'express'
 import { z } from 'zod'
 import { requireAuth, requireTenant, requireRole } from '../middleware/auth.js'
 import { withTenant } from '../db/pool.js'
+import { trackEvent, trackEventStandalone } from '../lib/events.js'
 
 const MUTATOR = ['admin', 'analyst', 'commercial']
 const APPROVER = ['admin', 'reviewer']
@@ -324,6 +325,11 @@ export function createPeopleRouter({ pool }) {
           e.status = 409; throw e
         }
         return { task: task[0], approval: appr[0] }
+      })
+      await trackEventStandalone(pool, req.tenantId, 'bundle.exported', {
+        actorUserId: req.user.id,
+        objectId: req.params.id,
+        metadata: { approval_id: out.approval.id },
       })
       res.json({
         export_type: 'manual_send_bundle',

@@ -11,6 +11,7 @@ import { hashPassword, verifyPassword, PASSWORD_MIN_LENGTH } from '../auth/passw
 import { createSession, destroySession } from '../auth/sessions.js'
 import { withTxn, withNoTenant } from '../db/pool.js'
 import { httpError } from '../lib/errors.js'
+import { trackEvent } from '../lib/events.js'
 
 const registerSchema = z.object({
   email: z.string().email().max(254),
@@ -57,6 +58,7 @@ export function createAuthRouter({ pool }) {
            VALUES ($1, $2, 'auth.register', 'user', $2)`,
           [tenant.id, user.id],
         )
+        await trackEvent(c, tenant.id, 'auth.registered', { actorUserId: user.id })
         return { user, tenant }
       })
 

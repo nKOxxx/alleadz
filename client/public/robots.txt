@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Alleadz agent surface
+Sitemap: none
+# Agent-readable docs:
+# /llms.txt — product summary + API surface

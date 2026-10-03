@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { requireAuth, requireTenant, requireRole } from '../middleware/auth.js'
 import { withTenant } from '../db/pool.js'
 import { analyzeExtracted, findingConfidence } from '../lib/intelligence.js'
+import { trackEvent } from '../lib/events.js'
 
 async function audit(client, tenantId, actorId, action, objectType, objectId) {
   await client.query(
@@ -92,6 +93,11 @@ export function createIntelligenceRouter({ pool }) {
         }
 
         await audit(c, req.tenantId, req.user.id, 'discovery.analyze', 'discovery_run', run.id)
+        await trackEvent(c, req.tenantId, 'discovery.analyze', {
+          actorUserId: req.user.id,
+          objectId: run.id,
+          metadata: { signal_id: sig[0].id, findings: enriched.length, research_tasks: tasks.length },
+        })
         return { signal: sig[0], findings: enriched, pain_cues, source_id: sourceId, research_tasks: tasks }
       })
       res.status(201).json(out)
@@ -152,6 +158,11 @@ export function createIntelligenceRouter({ pool }) {
           [[claim[0].id], signal.id],
         )
         await audit(c, req.tenantId, req.user.id, 'signal.promote', 'claim', claim[0].id)
+        await trackEvent(c, req.tenantId, 'signal.promoted', {
+          actorUserId: req.user.id,
+          objectId: claim[0].id,
+          metadata: { signal_id: signal.id, predicate: input.predicate },
+        })
         return { claim: claim[0] }
       })
       res.status(201).json(out)
