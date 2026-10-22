@@ -2,14 +2,19 @@
 
 | Phase | Name | Status | Evidence |
 |---|---|---|---|
-| 0 | Repository assessment + frozen contracts | **passed** | this repo scaffold; reuse assessment below; contracts frozen in `CONTRACTS.md`; briefs in `docs/phases/` |
-| 1 | Workspace, twins, evidence foundation | **in_progress** | — |
-| 2 | Account import + research queue | pending | — |
-| 3 | Opportunity Thesis + explainable matching | pending | — |
-| 4 | Decision owners, actions, approvals — ALPHA | pending | — |
-| 5 | Bounded discovery + contact enrichment | pending | — |
-| 6 | Cross-sector + ecosystem handoffs | pending | — |
-| 7 | Pilot hardening + release | pending | — |
+| 0 | Repository assessment + frozen contracts | **passed** 2026-09-27 | this repo scaffold; reuse assessment below; contracts frozen in `CONTRACTS.md`; briefs in `docs/phases/` |
+| 1 | Workspace, twins, evidence foundation | **passed** 2026-10-01 | commit `f4fd44d` — RLS foundation, 8/8 server tests, client shell + auth (3/3 client tests) |
+| 2 | Account import + research queue | **passed** 2026-10-01 | commit `6ee881d` — CSV import preview/commit, RFC4180 parser, reconciliation (A03/A04 proven), 16/16 |
+| 3 | Opportunity Thesis + explainable matching | **passed** 2026-10-01 | commit `1b9db85` — immutable thesis versions, rubric v1.1 (A06/A07), cite-or-hypothesis law (A05), 24/24 |
+| 4 | Decision owners, actions, approvals — ALPHA | **passed** 2026-10-02 | commit `4e92111` — email-class law (A09), human-confirmed relationships, bind/revoke approvals, manual-send-only (A10/A11), 32/32 |
+| 5 | Bounded discovery + contact enrichment | **passed** 2026-10-02 | commit `3079577` — SSRF-guarded discovery with caps, sha256 snapshots (A12/A13), 36/36 |
+| 6 | Cross-sector + ecosystem handoffs | **passed** 2026-10-03 | commit `dd79ecf` — sector packs as config (A14), handoff envelope v1 (A15), qualified-only gate, 40/40 |
+| 7 | Pilot hardening + release | **passed** 2026-10-04 | commits `8e23881` (shared-DB Render mode) + `7ba380d` (auth-limiter scope fix); live at alleadz.onrender.com; full suite 76/76 |
+
+> NOTE (2026-10-22): status table was stale ("Phase 1 in progress") while all phases
+> had shipped per git history — corrected from commit evidence above. Live-site audit
+> same day found the deployed build predated `7ba380d` (429s on authenticated GET);
+> redeploy forced via empty commit `c2d3aff`.
 
 ## Phase 0 findings (2026-09-27)
 
