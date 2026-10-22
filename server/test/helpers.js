@@ -49,13 +49,16 @@ export async function createScratchDb() {
     // Model prod role separation (SECURITY_BASELINE #7): the APP connects as a
     // dedicated non-superuser role so FORCE RLS actually bites. (Superusers
     // bypass even FORCE RLS — connecting tests as the owner would prove nothing.)
-    await admin.query(
-      `DO $$ BEGIN
-         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'alleadz_app') THEN
-           CREATE ROLE alleadz_app LOGIN PASSWORD 'alleadz_test_only' NOSUPERUSER NOBYPASSRLS;
-         END IF;
-       END $$`,
-    )
+    // Parallel vitest workers race the check-then-create DO block (observed in
+    // CI 2026-10-22: both pass the NOT EXISTS check, one hits 23505). Plain
+    // CREATE + swallow the duplicate is race-proof: loser = role exists.
+    try {
+      await admin.query(
+        `CREATE ROLE alleadz_app LOGIN PASSWORD 'alleadz_test_only' NOSUPERUSER NOBYPASSRLS`,
+      )
+    } catch (err) {
+      if (err.code !== '23505' && err.code !== '42710') throw err
+    }
     await admin.query(`GRANT CONNECT ON DATABASE ${dbName} TO alleadz_app`)
     const owner = new pg.Client({ connectionString: ownerUrl })
     await owner.connect()
@@ -76,6 +79,14 @@ export async function createScratchDb() {
     // we build the libpq string directly. The test password is ASCII-safe.
     appUrl = `postgresql://alleadz_app:alleadz_test_only@/${dbName}?host=/tmp`
   }
+
+  // src/db/pool.js builds a module-level pool at import time from
+  // process.env.DATABASE_URL. On dev machines with no DATABASE_URL (local
+  // socket Postgres only), that import throws before any test runs — the
+  // scratch URL exists only as `appUrl` here. Seed the env (if absent) with
+  // the scratch URL so the import-time pool is well-formed; per-test pools
+  // still use appUrl directly, so behavior on CI is unchanged.
+  if (!process.env.DATABASE_URL) process.env.DATABASE_URL = appUrl
 
   const { createPool } = await import('../src/db/pool.js')
   const pool = createPool(appUrl)
