@@ -223,7 +223,7 @@ export function createIntelligenceRouter({ pool, analyst } = {}) {
         // dossier per org: claims (newest first) + signals (newest first), tenant-scoped
         const ids = orgs.map((o) => o.id)
         const { rows: claimRows } = await c.query(
-          `SELECT subject_id, predicate, value, assertion_type, created_at
+          `SELECT id, subject_id, predicate, value, assertion_type, created_at
              FROM claims WHERE subject_type = 'organisation' AND subject_id = ANY($1::uuid[])
             ORDER BY created_at DESC`, [ids])
         const { rows: signalRows } = await c.query(
@@ -234,7 +234,7 @@ export function createIntelligenceRouter({ pool, analyst } = {}) {
             ORDER BY s.occurred_at DESC`, [ids]).catch(() => ({ rows: [] }))
         const claimsBy = new Map(ids.map((id) => [id, []]))
         const signalsBy = new Map(ids.map((id) => [id, []]))
-        for (const r of claimRows) claimsBy.get(r.subject_id)?.push({ assertion_type: r.assertion_type, predicate: r.predicate, value: r.value })
+        for (const r of claimRows) claimsBy.get(r.subject_id)?.push({ id: r.id, assertion_type: r.assertion_type, predicate: r.predicate, value: r.value })
         for (const r of signalRows) signalsBy.get(r.org_id)?.push({ occurred_at: r.occurred_at, event_type: r.event_type, summary: r.summary })
 
         const dossiers = orgs.map((o) => ({

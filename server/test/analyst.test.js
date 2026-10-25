@@ -274,3 +274,141 @@ describe('POST /leads/rank', () => {
   })
 })
 
+describe('POST /opportunities/:id/scenario — brain drafts, spine scores, stage frozen', () => {
+  let ctx
+  // stub behavior switch: 'good' cites real claim ids; 'dangling' cites a bogus one
+  let stubMode = 'good'
+
+  const analystFetch = async (url, opts) => {
+    if (String(url).includes('chat/completions')) {
+      const body = JSON.parse(opts.body)
+      const system = body.messages.find((m) => m.role === 'system').content
+      const user = body.messages.find((m) => m.role === 'user').content
+      if (system.includes('sales-engagement thesis')) {
+        // scenario call: cite the first printed claim id (or a bogus one in 'dangling' mode)
+        const cid = [...user.matchAll(/CLAIM ([0-9a-f-]{36}) \[/g)][0]?.[1]
+          || '99999999-9999-4999-8999-999999999999'
+        const cite = stubMode === 'good' ? cid : '99999999-9999-4999-8999-999999999999'
+        const sec = (k) => `${k} rests on the recorded evidence [claim:${cite}].`
+        return { ok: true, status: 200, json: async () => ({
+          choices: [{ message: { content: JSON.stringify({
+            sections: {
+              why_this_matters: sec('why_this_matters'),
+              why_now: sec('why_now'),
+              why_this_org: sec('why_this_org'),
+              what_they_may_need: sec('what_they_may_need'),
+              what_we_can_provide: 'Hypothesis: clip automation saves their editors hours weekly.',
+              who_controls_decision: 'Hypothesis: founder-led buying decision.',
+              what_evidence_supports: sec('what_evidence_supports'),
+              what_could_invalidate: 'Hypothesis: budget may go to hiring instead.',
+              recommended_next_action: 'Hypothesis: send a 2-line intro referencing their public pain.',
+            },
+            ratings: {
+              fit: { rating: 4, rationale: 'video-first team' },
+              trigger: { rating: 'unknown' },
+              timing: { rating: 'unknown' },
+              budget: { rating: 'unknown' },
+              access: { rating: 'unknown' },
+            },
+          }) } }],
+        }) }
+      }
+      // rank call (existing shape)
+      const ids = [...user.matchAll(/ORG ([0-9a-f-]{36}) \(([^)]+)\)/g)]
+      return { ok: true, status: 200, json: async () => ({
+        choices: [{ message: { content: JSON.stringify({
+          orgs: ids.map(([_, id]) => ({
+            organisation_id: id,
+            why: 'video-first team drowning in manual clipping',
+            ratings: { fit: { rating: 4, rationale: 'video-first team' }, trigger: { rating: 'unknown' },
+              timing: { rating: 'unknown' }, budget: { rating: 'unknown' }, access: { rating: 'unknown' } },
+          })),
+        }) } }],
+      }) }
+    }
+    throw new Error('unexpected fetch in analyst test: ' + url)
+  }
+
+  beforeAll(async () => {
+    process.env.DEEPSEEK_API_KEY = 'test-key-not-real'
+    ctx = { db: await createScratchDb() }
+    ctx.app = ctx.db.createApp({ rateLimits: false, fetchImpl: analystFetch })
+    ctx.server = ctx.app.listen(0)
+    ctx.base = `http://127.0.0.1:${ctx.server.address().port}`
+    ctx.A = await registerUser(ctx.base, 'scenario@p7.test', 'Scenario')
+
+    // offering twin + target org + evidenced claim + opportunity (house recipe)
+    const org = await api(ctx.base, { method: 'POST', path: '/orgs', token: ctx.A.token, tenantId: ctx.A.tenantId,
+      body: { canonical_name: 'nybls (test)', entity_type: 'provider', domains: ['nybls.test'] } })
+    const twin = await api(ctx.base, { method: 'POST', path: '/twins', token: ctx.A.token, tenantId: ctx.A.tenantId,
+      body: { organisation_id: org.json.id, offering: true,
+        version: { mandate: 'sell AI video workflow tooling', permitted_markets: [],
+          capabilities: [{ name: 'clip automation', status: 'reviewed' }], status: 'active' } } })
+    ctx.twinId = twin.json.twin?.id || twin.json.id
+    const target = await api(ctx.base, { method: 'POST', path: '/orgs', token: ctx.A.token, tenantId: ctx.A.tenantId,
+      body: { canonical_name: 'ClipForge Media', entity_type: 'buyer', domains: ['clipforge.test'] } })
+    ctx.targetId = target.json.id
+    const claim = await api(ctx.base, { method: 'POST', path: '/claims', token: ctx.A.token, tenantId: ctx.A.tenantId,
+      body: { subject_type: 'organisation', subject_id: ctx.targetId, predicate: 'pain_point',
+        value: 'video-first team drowning in manual clipping', assertion_type: 'sourced_fact' } })
+    ctx.claimId = claim.json.id
+    ctx.opp = (await api(ctx.base, { method: 'POST', path: '/opportunities', token: ctx.A.token,
+      tenantId: ctx.A.tenantId,
+      body: { offering_twin_id: ctx.twinId, target_org_id: ctx.targetId, sector_type: 'video_ai' } })).json.opportunity
+  })
+
+  afterAll(async () => {
+    delete process.env.DEEPSEEK_API_KEY
+    ctx?.server?.close()
+    await ctx?.db?.cleanup()
+  })
+
+  it('drafts a cited thesis through the deterministic spine; stage stays candidate', async () => {
+    const res = await api(ctx.base, { method: 'POST', path: `/opportunities/${ctx.opp.id}/scenario`,
+      token: ctx.A.token, tenantId: ctx.A.tenantId, body: {} })
+    expect(res.status).toBe(201)
+    const th = res.json.thesis
+    expect(Object.keys(th.sections).length).toBe(9)
+    expect(th.sections.why_this_matters).toContain(`[claim:${ctx.claimId}]`)
+    // spine math: fit 4 -> priority 35 (fit's weight), coverage 0.35 (rated weight share)
+    expect(th.priority).toBeCloseTo(35, 2)
+    expect(th.coverage).toBeCloseTo(0.35, 2)
+    // provenance: brain-drafted, spine-scored
+    expect(th.scores.origin).toBe('llm_analyst')
+    expect(th.rule_version).toBe('rubric-v1.1')
+    // THE law: scenario never moves the stage
+    const oppRow = await queryAsTenant(ctx.db.pool, ctx.A.tenantId, ctx.A.userId,
+      'SELECT stage, latest_thesis_id FROM opportunities WHERE id = $1', [ctx.opp.id])
+    expect(oppRow.rows[0].stage).toBe('candidate')
+    expect(oppRow.rows[0].latest_thesis_id).toBe(th.id)
+  })
+
+  it('422s draft_dropped when the brain cites a claim that does not exist', async () => {
+    stubMode = 'dangling'
+    const res = await api(ctx.base, { method: 'POST', path: `/opportunities/${ctx.opp.id}/scenario`,
+      token: ctx.A.token, tenantId: ctx.A.tenantId, body: {} })
+    expect(res.status).toBe(422)
+    expect(res.json.error.code).toBe('draft_dropped')
+    // and nothing was persisted
+    const { rows } = await queryAsTenant(ctx.db.pool, ctx.A.tenantId, ctx.A.userId,
+      'SELECT COUNT(*)::int n FROM theses WHERE opportunity_id = $1', [ctx.opp.id])
+    expect(rows[0].n).toBe(1) // only the good draft from the previous test
+    stubMode = 'good'
+  })
+
+  it('503s when no analyst is configured', async () => {
+    delete process.env.DEEPSEEK_API_KEY
+    const db2 = await createScratchDb()
+    const app2 = db2.createApp({ rateLimits: false })
+    const s2 = app2.listen(0)
+    const base2 = `http://127.0.0.1:${s2.address().port}`
+    const u = await registerUser(base2, 'noscenario@p7.test', 'NoScenario')
+    const res = await api(base2, { method: 'POST', path: '/opportunities/00000000-0000-4000-8000-000000000000/scenario',
+      token: u.token, tenantId: u.tenantId, body: {} })
+    expect(res.status).toBe(503)
+    s2.close()
+    await db2.cleanup()
+    process.env.DEEPSEEK_API_KEY = 'test-key-not-real'
+  })
+})
+

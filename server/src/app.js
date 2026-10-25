@@ -46,15 +46,18 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use('/api', authLimiter, createAuthRouter({ pool }))
   app.use('/api', createOrgsRouter({ pool }))
   app.use('/api', createImportsRouter({ pool }))
-  app.use('/api', createOpportunitiesRouter({ pool }))
-  app.use('/api', createPeopleRouter({ pool }))
-  app.use('/api', createDiscoveryRouter({ pool, fetchImpl }))
-  app.use('/api', createIntelligenceRouter({ pool, analyst: createAnalyst({
+  // one analyst instance, shared by the intelligence router (analyze/rank) and the
+  // opportunities router (scenario drafts). No key in env -> null -> deterministic only.
+  const analyst = createAnalyst({
     apiKey: process.env.DEEPSEEK_API_KEY,
     baseUrl: process.env.ANALYST_BASE_URL || undefined,
     model: process.env.ANALYST_MODEL || undefined,
     fetchImpl,
-  }) }))
+  })
+  app.use('/api', createOpportunitiesRouter({ pool, analyst }))
+  app.use('/api', createPeopleRouter({ pool }))
+  app.use('/api', createDiscoveryRouter({ pool, fetchImpl }))
+  app.use('/api', createIntelligenceRouter({ pool, analyst }))
   app.use('/api', createPortfolioRouter({ pool }))
   app.use('/api', createVerticalsRouter({ pool }))
 

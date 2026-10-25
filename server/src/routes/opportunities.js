@@ -102,10 +102,100 @@ function validateSections(sections, claimIds, claimsBy) {
   return { ok: problems.length === 0, problems, referenced }
 }
 
-export function createOpportunitiesRouter({ pool }) {
+export function createOpportunitiesRouter({ pool, analyst }) {
   const router = express.Router()
   router.use(requireAuth({ pool }), requireTenant({ pool }))
   const jsonBody = express.json({ limit: '1mb' })
+
+  /**
+   * Deterministic thesis-persist spine — the ONLY way a thesis row is written.
+   * Loads the opportunity, applies A05 section validation (+admin override path),
+   * runs twin hard checks + rubric scoring + confidence, inserts the next thesis
+   * version. Used by POST /theses (human drafts) and POST /opportunities/:id/scenario
+   * (brain drafts) alike. Returns { thesis, opp, validation }.
+   */
+  async function persistThesis(c, { tenantId, userId, opportunityId, ratings, sections, override, overrideReason,
+    invalidators = [], contradictions = [], valueModels = [], origin }) {
+    const { rows: opps } = await c.query('SELECT * FROM opportunities WHERE id = $1', [opportunityId])
+    const opp = opps[0]
+    if (!opp) { const e = new Error('Opportunity not found'); e.status = 404; throw e }
+
+    // offering twin ACTIVE version + target claims
+    const { rows: tvRows } = await c.query(
+      `SELECT tv.* FROM twin_versions tv JOIN twins t ON t.id = tv.twin_id
+       WHERE t.id = $1 AND tv.status = 'active' ORDER BY tv.version DESC LIMIT 1`, [opp.offering_twin_id],
+    )
+    const tv = tvRows[0] || { mandate: null, permitted_markets: [], excluded_markets: [], capabilities: [] }
+    const { rows: claimRows } = await c.query(
+      `SELECT * FROM claims WHERE subject_type = 'organisation' AND subject_id = $1`, [opp.target_org_id],
+    )
+    const targetClaims = {}
+    for (const cl of claimRows) targetClaims[cl.predicate] = cl.value?.value ?? cl.value
+    // country fact of record = the organisation row itself (claims may also assert it)
+    if (targetClaims.country == null) {
+      const { rows: orgRows } = await c.query('SELECT country FROM organisations WHERE id = $1', [opp.target_org_id])
+      targetClaims.country = orgRows[0]?.country ?? null
+    }
+    const claimIds = new Set(claimRows.map((cl) => cl.id))
+
+    // A05: unsupported material assertions block thesis_ready
+    let validation = { ok: true, problems: [], referenced: [] }
+    if (sections) {
+      validation = validateSections(sections, claimIds, claimRows)
+      if (!validation.ok && !(override && overrideReason)) {
+        const e = new Error(`Section validation failed: ${validation.problems.join('; ')}`)
+        e.status = 422; e.code = 'unsupported_assertion'; throw e
+      }
+    }
+
+    const hardChecks = runHardChecks({
+      mandate: tv.mandate,
+      permittedMarkets: tv.permitted_markets || [],
+      excludedMarkets: tv.excluded_markets || [],
+      capabilities: tv.capabilities || [],
+      targetClaims,
+      sectorType: opp.sector_type,
+    })
+    const summary = hardCheckSummary(hardChecks)
+    const scores = scoreOpportunity(ratings)
+
+    // evidence age: newest source referenced by any cited claim.
+    // Claims with NO cited sources are user-declared (user_claim) — age is
+    // not evaluated for them (9999 sentinel only applies to cited claims).
+    let evidenceAgeDays = 0
+    const citedSources = claimRows.flatMap((cl) => cl.evidence_source_ids || [])
+    if (citedSources.length) {
+      const { rows: srcRows } = await c.query('SELECT max(observed_at) m FROM sources WHERE id = ANY($1)', [citedSources])
+      if (srcRows[0]?.m) {
+        evidenceAgeDays = Math.floor((Date.now() - new Date(srcRows[0].m).getTime()) / 86400000)
+      } else {
+        evidenceAgeDays = 9999 // dangling source ids = stale evidence
+      }
+    }
+    const conf = confidenceFor({ coverage: scores.coverage, hardChecks, evidenceAgeDays, contradictions })
+
+    const versionRow = await c.query(
+      'SELECT COALESCE(MAX(version), 0) + 1 v FROM theses WHERE opportunity_id = $1', [opportunityId],
+    )
+    const version = versionRow.rows[0].v
+    const finalSections = sections || Object.fromEntries(NINE_SECTIONS.map((k) => [k, '']))
+
+    const { rows: thRows } = await c.query(
+      `INSERT INTO theses (tenant_id, opportunity_id, version, twin_version_id, signal_ids, rule_version,
+         sections, scores, hard_checks, coverage, priority, confidence, missing_conditions,
+         invalidators, contradictions, value_models, author_actor)
+       VALUES ($1,$2,$3,$4,'{}',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [tenantId, opportunityId, version, tv.id || null, RULE_VERSION,
+       JSON.stringify(finalSections), JSON.stringify({ ratings, perDim: scores.perDim, origin: origin || 'human' }),
+       JSON.stringify({ checks: hardChecks, summary }), scores.coverage, scores.priority,
+       conf.confidence, conf.missing_conditions, JSON.stringify(invalidators),
+       JSON.stringify(contradictions), JSON.stringify(valueModels), userId],
+    )
+    const thesis = thRows[0]
+    await c.query('UPDATE opportunities SET latest_thesis_id = $1, updated_at = now() WHERE id = $2',
+      [thesis.id, opp.id])
+    return { thesis, opp, validation }
+  }
 
   // ---- signals ----
   router.post('/signals', requireRole('admin', 'analyst', 'commercial'), jsonBody, async (req, res, next) => {
@@ -204,85 +294,18 @@ export function createOpportunitiesRouter({ pool }) {
       }
 
       const out = await withTenant(pool, req.tenantId, req.user.id, async (c) => {
-        const { rows: opps } = await c.query('SELECT * FROM opportunities WHERE id = $1', [input.opportunity_id])
-        const opp = opps[0]
-        if (!opp) { const e = new Error('Opportunity not found'); e.status = 404; throw e }
-
-        // offering twin ACTIVE version + target claims
-        const { rows: tvRows } = await c.query(
-          `SELECT tv.* FROM twin_versions tv JOIN twins t ON t.id = tv.twin_id
-           WHERE t.id = $1 AND tv.status = 'active' ORDER BY tv.version DESC LIMIT 1`, [opp.offering_twin_id],
-        )
-        const tv = tvRows[0] || { mandate: null, permitted_markets: [], excluded_markets: [], capabilities: [] }
-        const { rows: claimRows } = await c.query(
-          `SELECT * FROM claims WHERE subject_type = 'organisation' AND subject_id = $1`, [opp.target_org_id],
-        )
-        const targetClaims = {}
-        for (const cl of claimRows) targetClaims[cl.predicate] = cl.value?.value ?? cl.value
-        // country fact of record = the organisation row itself (claims may also assert it)
-        if (targetClaims.country == null) {
-          const { rows: orgRows } = await c.query('SELECT country FROM organisations WHERE id = $1', [opp.target_org_id])
-          targetClaims.country = orgRows[0]?.country ?? null
-        }
-        const claimIds = new Set(claimRows.map((cl) => cl.id))
-
-        // A05: unsupported material assertions block thesis_ready
-        let validation = { ok: true, problems: [], referenced: [] }
-        if (input.sections) {
-          validation = validateSections(input.sections, claimIds, claimRows)
-          if (!validation.ok && !override) {
-            const e = new Error(`Section validation failed: ${validation.problems.join('; ')}`)
-            e.status = 422; e.code = 'unsupported_assertion'; throw e
-          }
-        }
-
-        const hardChecks = runHardChecks({
-          mandate: tv.mandate,
-          permittedMarkets: tv.permitted_markets || [],
-          excludedMarkets: tv.excluded_markets || [],
-          capabilities: tv.capabilities || [],
-          targetClaims,
-          sectorType: opp.sector_type,
+        const { thesis } = await persistThesis(c, {
+          tenantId: req.tenantId,
+          userId: req.user.id,
+          opportunityId: input.opportunity_id,
+          ratings: input.ratings,
+          sections: input.sections,
+          override: input.override && req.roles.includes('admin'),
+          overrideReason: input.override_reason,
+          invalidators: input.invalidators,
+          contradictions: input.contradictions,
+          valueModels: input.value_models,
         })
-        const summary = hardCheckSummary(hardChecks)
-        const scores = scoreOpportunity(input.ratings)
-        const contradictions = input.contradictions
-
-        // evidence age: newest source referenced by any cited claim.
-        // Claims with NO cited sources are user-declared (user_claim) — age is
-        // not evaluated for them (9999 sentinel only applies to cited claims).
-        let evidenceAgeDays = 0
-        const citedSources = claimRows.flatMap((cl) => cl.evidence_source_ids || [])
-        if (citedSources.length) {
-          const { rows: srcRows } = await c.query('SELECT max(observed_at) m FROM sources WHERE id = ANY($1)', [citedSources])
-          if (srcRows[0]?.m) {
-            evidenceAgeDays = Math.floor((Date.now() - new Date(srcRows[0].m).getTime()) / 86400000)
-          } else {
-            evidenceAgeDays = 9999 // dangling source ids = stale evidence
-          }
-        }
-        const conf = confidenceFor({ coverage: scores.coverage, hardChecks, evidenceAgeDays, contradictions })
-
-        const versionRow = await c.query(
-          'SELECT COALESCE(MAX(version), 0) + 1 v FROM theses WHERE opportunity_id = $1', [input.opportunity_id],
-        )
-        const version = versionRow.rows[0].v
-        const sections = input.sections || Object.fromEntries(NINE_SECTIONS.map((k) => [k, '']))
-
-        const { rows: thRows } = await c.query(
-          `INSERT INTO theses (tenant_id, opportunity_id, version, twin_version_id, signal_ids, rule_version,
-             sections, scores, hard_checks, coverage, priority, confidence, missing_conditions,
-             invalidators, contradictions, value_models, author_actor)
-           VALUES ($1,$2,$3,$4,'{}',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-          [req.tenantId, input.opportunity_id, version, tv.id || null, RULE_VERSION,
-           JSON.stringify(sections), JSON.stringify({ ratings: input.ratings, perDim: scores.perDim }),
-           JSON.stringify({ checks: hardChecks, summary }), scores.coverage, scores.priority,
-           conf.confidence, conf.missing_conditions, JSON.stringify(input.invalidators),
-           JSON.stringify(contradictions), JSON.stringify(input.value_models), req.user.id],
-        )
-        const thesis = thRows[0]
-        await c.query('UPDATE opportunities SET latest_thesis_id = $1, updated_at = now() WHERE id = $2',
-          [thesis.id, opp.id])
         return thesis
       })
 
@@ -290,7 +313,68 @@ export function createOpportunitiesRouter({ pool }) {
     } catch (e) { next(e) }
   })
 
-  // ---- stage transitions (server-enforced matrix) ----
+  // POST /opportunities/:id/scenario — the brain drafts a thesis (sections+ratings)
+  // from the target org's dossier; the deterministic spine validates (A05 gate),
+  // scores, and persists it as origin:'llm_analyst'. Stage NEVER moves here:
+  // advancement stays human via /transitions, by design.
+  router.post('/opportunities/:id/scenario', requireRole('admin', 'analyst'), jsonBody, async (req, res, next) => {
+    try {
+      if (!analyst) {
+        return res.status(503).json({ error: { code: 'analyst_not_configured', message: 'analyst not configured' } })
+      }
+      const out = await withTenant(pool, req.tenantId, req.user.id, async (c) => {
+        const { rows: opps } = await c.query('SELECT * FROM opportunities WHERE id = $1', [req.params.id])
+        const opp = opps[0]
+        if (!opp) { const e = new Error('Opportunity not found'); e.status = 404; throw e }
+
+        // dossier: claims (with ids, newest first) + signals, tenant-scoped
+        const { rows: claimRows } = await c.query(
+          `SELECT id, predicate, value, assertion_type FROM claims
+            WHERE subject_type = 'organisation' AND subject_id = $1
+            ORDER BY created_at DESC`, [opp.target_org_id])
+        const { rows: signalRows } = await c.query(
+          `SELECT s.event_type, s.occurred_at, s.summary FROM signals s
+            WHERE s.affected_org_ids @> ARRAY[$1::uuid]
+            ORDER BY s.occurred_at DESC`, [opp.target_org_id]).catch(() => ({ rows: [] }))
+        const { rows: orgRows } = await c.query('SELECT canonical_name FROM organisations WHERE id = $1', [opp.target_org_id])
+        // offering context: the twin's active version capabilities, if any
+        const { rows: tvRows } = await c.query(
+          `SELECT tv.capabilities, t.organisation_id FROM twin_versions tv JOIN twins t ON t.id = tv.twin_id
+           WHERE t.id = $1 AND tv.status = 'active' ORDER BY tv.version DESC LIMIT 1`, [opp.offering_twin_id])
+        let offering = null
+        if (tvRows[0]) {
+          const { rows: ourOrg } = await c.query('SELECT canonical_name FROM organisations WHERE id = $1', [tvRows[0].organisation_id])
+          offering = { name: ourOrg[0]?.canonical_name || null, capabilities: tvRows[0].capabilities || [] }
+        }
+
+        const { sections, ratings } = await analyst.scenario({
+          dossier: {
+            id: opp.target_org_id,
+            name: orgRows[0]?.canonical_name || 'unknown org',
+            claims: claimRows,
+            signals: signalRows,
+          },
+          offering,
+        })
+        const { thesis } = await persistThesis(c, {
+          tenantId: req.tenantId,
+          userId: req.user.id,
+          opportunityId: opp.id,
+          ratings,
+          sections,
+          origin: 'llm_analyst',
+        })
+        return thesis
+      })
+      res.status(201).json({ thesis: out, note: 'draft thesis stored; advance stages via /transitions (human)' })
+    } catch (e) {
+      if (e.dropped) {
+        return res.status(422).json({ error: { code: 'draft_dropped', message: e.message } })
+      }
+      next(e)
+    }
+  })
+
   router.post('/opportunities/:id/transitions', requireRole('admin', 'analyst', 'commercial', 'reviewer'), jsonBody, async (req, res, next) => {
     try {
       const input = transitionSchema.parse(req.body)
