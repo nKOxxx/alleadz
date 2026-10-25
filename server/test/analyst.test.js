@@ -234,7 +234,6 @@ describe('POST /leads/rank', () => {
 
     const res = await api(ctx.base, { method: 'POST', path: '/leads/rank', token: ctx.A.token,
       tenantId: ctx.A.tenantId, body: {} })
-    console.log('DEBUG rank ->', res.status, JSON.stringify(res.json).slice(0, 400))
     expect(res.status).toBe(201)
 
     // good org: brain rated fit4/trigger3/budget2 -> spine math (35 + 18.75 + 7.5) = 61.25, coverage 0.75

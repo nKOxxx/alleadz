@@ -118,9 +118,9 @@ export function createAnalyst({ apiKey, baseUrl = 'https://api.hyperfusion.io/v1
   if (!apiKey) return null // no key -> analyst simply not installed; routes stay deterministic
 
   /** One JSON-contract chat completion. Throws (status-coded) on transport/contract failure. */
-  async function chat(system, user, maxTokens) {
+  async function chat(system, user, maxTokens, callTimeoutMs = timeoutMs) {
     const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), timeoutMs)
+    const t = setTimeout(() => ctrl.abort(), callTimeoutMs)
     try {
       const res = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
@@ -157,19 +157,25 @@ export function createAnalyst({ apiKey, baseUrl = 'https://api.hyperfusion.io/v1
   /**
    * Rank orgs: dossiers = [{id, name, claims:[{assertion_type,predicate,value}], signals:[{occurred_at,event_type,summary}]}]
    * -> {rankings: [{organisation_id, why, ratings}], model}. Dropped orgs simply don't come back.
+   * Chunked (4 orgs/call, 8000-token budget): the lane model is a reasoner — it burns
+   * reasoning_content tokens before the JSON, and thinking scales with batch density.
    */
   async function rank({ dossiers }) {
-    const hay = dossierText(dossiers)
-    const parsed = await chat(RANK_SYSTEM_PROMPT, hay, 2400)
-    const byId = new Map(dossiers.map((d) => [d.id, d]))
+    const CHUNK = 4
     const rankings = []
-    for (const p of Array.isArray(parsed?.orgs) ? parsed.orgs : []) {
-      const id = String(p?.organisation_id || '')
-      const d = byId.get(id)
-      if (!d) continue
-      const dHay = dossierText([d])
-      const g = gateRanking(p, d, dHay)
-      if (g) rankings.push(g)
+    for (let i = 0; i < dossiers.length; i += CHUNK) {
+      const batch = dossiers.slice(i, i + CHUNK)
+      const hay = dossierText(batch)
+      const parsed = await chat(RANK_SYSTEM_PROMPT, hay, 16_000, 180_000) // reasoners think long on dense batches
+      const byId = new Map(batch.map((d) => [d.id, d]))
+      for (const p of Array.isArray(parsed?.orgs) ? parsed.orgs : []) {
+        const id = String(p?.organisation_id || '')
+        const d = byId.get(id)
+        if (!d) continue
+        const dHay = dossierText([d])
+        const g = gateRanking(p, d, dHay)
+        if (g) rankings.push(g)
+      }
     }
     return { rankings, model }
   }
