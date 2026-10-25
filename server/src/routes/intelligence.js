@@ -20,9 +20,10 @@ async function audit(client, tenantId, actorId, action, objectType, objectId) {
 const analyzeSchema = z.object({
   run_id: z.string().uuid(),
   organisation_id: z.string().uuid().nullable().optional(),
+  mode: z.enum(['deterministic', 'llm']).optional(),
 })
 
-export function createIntelligenceRouter({ pool }) {
+export function createIntelligenceRouter({ pool, analyst } = {}) {
   const router = express.Router()
   router.use(requireAuth({ pool }), requireTenant({ pool }))
   const jsonBody = express.json({ limit: '100kb' })
@@ -32,6 +33,8 @@ export function createIntelligenceRouter({ pool }) {
   router.post('/discovery/analyze', requireRole('admin', 'analyst'), jsonBody, async (req, res, next) => {
     try {
       const input = analyzeSchema.parse(req.body ?? {})
+      // config errors are independent of the resource: check before touching the run
+      if (input.mode === 'llm' && !analyst) { const e = new Error('analyst not configured'); e.status = 503; throw e }
       const out = await withTenant(pool, req.tenantId, req.user.id, async (c) => {
         const { rows: runs } = await c.query(
           `SELECT id, organisation_id, requested_url, final_url, extracted, status
@@ -54,15 +57,44 @@ export function createIntelligenceRouter({ pool }) {
         )
         const sourceId = src[0].id
 
-        // 2. deterministic extraction
+        // 1b. optional LLM analyst pass (mode:'llm'): reads the stored snapshot,
+        // cite-or-drop gated. Degrades to deterministic findings on analyst failure
+        // unless explicitly requested — the run is never lost to an upstream outage.
+        let llmFindings = []
+        let analystError = null
+        if (input.mode === 'llm') {
+          try {
+            const { rows: snaps } = await c.query(
+              'SELECT body FROM discovery_snapshots WHERE run_id = $1 ORDER BY created_at DESC LIMIT 1',
+              [run.id],
+            )
+            const out = await analyst.analyze({ extracted: run.extracted || {}, snapshot: snaps[0]?.body || '' })
+            llmFindings = out.findings
+          } catch (err) {
+            analystError = err.message || 'analyst failed'
+          }
+        }
+        if (analystError && llmFindings.length === 0) {
+          const e = new Error(`analyst failed: ${analystError}`); e.status = 502; throw e
+        }
+
+        // 2. deterministic extraction + LLM findings merged (dedup by type+excerpt)
         const { findings, pain_cues } = analyzeExtracted(run.extracted || {})
-        const enriched = findings.map((f) => ({ ...f, confidence: findingConfidence(f, run.extracted || {}) }))
+        const detEnriched = findings.map((f) => ({ ...f, confidence: findingConfidence(f, run.extracted || {}) }))
+        const seen = new Set(detEnriched.map((f) => `${f.event_type}:${f.excerpt.slice(0, 60)}`))
+        const enriched = detEnriched
+        for (const f of llmFindings) {
+          const key = `${f.event_type}:${f.excerpt.slice(0, 60)}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          enriched.push(f)
+        }
 
         // 3. signal row (even when findings are empty: "crawled, nothing matched" is a fact)
-        const summary = findings.length
-          ? findings.map((f) => `${f.label}: ${f.excerpt}`).join(' | ').slice(0, 2000)
+        const summary = enriched.length
+          ? enriched.map((f) => `${f.label}: ${f.excerpt}`).join(' | ').slice(0, 2000)
           : `No classified signals on ${(run.final_url || run.requested_url).slice(0, 200)}`
-        const eventType = findings.length ? findings[0].event_type : 'none'
+        const eventType = enriched.length ? enriched[0].event_type : 'none'
         const orgId = input.organisation_id ?? run.organisation_id ?? null
         const { rows: sig } = await c.query(
           `INSERT INTO signals (tenant_id, event_type, occurred_at, summary, source_ids, claim_refs, affected_org_ids, created_by)

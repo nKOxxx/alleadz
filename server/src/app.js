@@ -23,6 +23,7 @@ import { createPeopleRouter } from './routes/people.js'
 import { createDiscoveryRouter } from './routes/discovery.js'
 import { createPortfolioRouter } from './routes/portfolio.js'
 import { createVerticalsRouter } from './routes/verticals.js'
+import { createAnalyst } from './lib/analyst.js'
 
 export function createApp({ pool, logger = console, rateLimits = true, fetchImpl } = {}) {
   if (!pool) throw new Error('createApp requires a pg pool')
@@ -48,7 +49,12 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use('/api', createOpportunitiesRouter({ pool }))
   app.use('/api', createPeopleRouter({ pool }))
   app.use('/api', createDiscoveryRouter({ pool, fetchImpl }))
-  app.use('/api', createIntelligenceRouter({ pool }))
+  app.use('/api', createIntelligenceRouter({ pool, analyst: createAnalyst({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseUrl: process.env.ANALYST_BASE_URL || undefined,
+    model: process.env.ANALYST_MODEL || undefined,
+    fetchImpl,
+  }) }))
   app.use('/api', createPortfolioRouter({ pool }))
   app.use('/api', createVerticalsRouter({ pool }))
 
