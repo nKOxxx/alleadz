@@ -166,7 +166,7 @@ export function createAnalyst({ apiKey, baseUrl = 'https://api.hyperfusion.io/v1
 
   /** Analyze one run: {extracted, snapshot} -> {findings, model}. Throws on transport failure. */
   async function analyze({ extracted, snapshot }) {
-    const parsed = await chat(SYSTEM_PROMPT, pageText(extracted, snapshot), 1200)
+    const parsed = await chat(SYSTEM_PROMPT, pageText(extracted, snapshot), 4000)
     const findings = gateFindings(parsed?.findings, pageText(extracted, snapshot))
     return { findings, model }
   }
