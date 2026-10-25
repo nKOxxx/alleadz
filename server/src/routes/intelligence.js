@@ -1,5 +1,7 @@
 // server/src/routes/intelligence.js — signal triage over discovery snapshots.
-// Deterministic only: findings come from lib/intelligence.js (regex/lexicon). No LLM.
+// Deterministic by default; mode:'llm' adds LLM-analyst findings (lib/analyst.js).
+// POST /leads/rank runs the analyst over org dossiers; the DETERMINISTIC rubric
+// (lib/rubric.js scoreOpportunity) does all scoring math — brain rates, spine scores.
 // Evidence chain: discovery_run -> findings (quoted excerpt) -> source row -> signal ->
 // promoted claim. A claim created here is 'sourced_fact' iff it carries evidence_source_ids.
 import express from 'express'
@@ -196,6 +198,74 @@ export function createIntelligenceRouter({ pool, analyst } = {}) {
           metadata: { signal_id: signal.id, predicate: input.predicate },
         })
         return { claim: claim[0] }
+      })
+      res.status(201).json(out)
+    } catch (e) { next(e) }
+  })
+
+  // POST /leads/rank — the LLM analyst reads tenant org dossiers (claims+signals),
+  // proposes rubric ratings + a verbatim "why" per org (cite-or-drop gated against
+  // the dossier), and scoreOpportunity() turns ratings into priority+coverage.
+  // Persisted as assertion_type='inference' claims (schema enforces rationale),
+  // predicate 'lead_ranking', value = {priority, coverage, why, ratings, model, rule_version}.
+  // Body: {organisation_ids?: uuid[]} — omit to rank every org in the tenant.
+  const rankSchema = z.object({ organisation_ids: z.array(z.string().uuid()).max(50).optional() })
+  router.post('/leads/rank', requireRole('admin', 'analyst'), jsonBody, async (req, res, next) => {
+    try {
+      if (!analyst) { const e = new Error('analyst not configured'); e.status = 503; throw e }
+      const input = rankSchema.parse(req.body ?? {})
+      const out = await withTenant(pool, req.tenantId, req.user.id, async (c) => {
+        const { rows: orgs } = input.organisation_ids?.length
+          ? await c.query('SELECT id, canonical_name FROM organisations WHERE id = ANY($1::uuid[])', [input.organisation_ids])
+          : await c.query('SELECT id, canonical_name FROM organisations ORDER BY created_at ASC LIMIT 50')
+        if (!orgs.length) { const e = new Error('no organisations to rank'); e.status = 404; throw e }
+
+        // dossier per org: claims (newest first) + signals (newest first), tenant-scoped
+        const ids = orgs.map((o) => o.id)
+        const { rows: claimRows } = await c.query(
+          `SELECT subject_id, predicate, value, assertion_type, created_at
+             FROM claims WHERE subject_type = 'organisation' AND subject_id = ANY($1::uuid[])
+            ORDER BY created_at DESC`, [ids])
+        const { rows: signalRows } = await c.query(
+          `SELECT s.id, s.event_type, s.occurred_at, s.summary, x.org_id
+             FROM signals s
+             JOIN unnest(s.affected_org_ids) AS x(org_id) ON x.org_id = ANY($1::uuid[])
+            WHERE s.affected_org_ids && $1::uuid[]
+            ORDER BY s.occurred_at DESC`, [ids]).catch(() => ({ rows: [] }))
+        const claimsBy = new Map(ids.map((id) => [id, []]))
+        const signalsBy = new Map(ids.map((id) => [id, []]))
+        for (const r of claimRows) claimsBy.get(r.subject_id)?.push({ assertion_type: r.assertion_type, predicate: r.predicate, value: r.value })
+        for (const r of signalRows) signalsBy.get(r.org_id)?.push({ occurred_at: r.occurred_at, event_type: r.event_type, summary: r.summary })
+
+        const dossiers = orgs.map((o) => ({
+          id: o.id, name: o.canonical_name,
+          claims: claimsBy.get(o.id) || [], signals: signalsBy.get(o.id) || [],
+        }))
+        const { rankings, model } = await analyst.rank({ dossiers })
+
+        // brain rated; spine scores — the ONLY math on ratings happens here
+        const { scoreOpportunity } = await import('../lib/rubric.js')
+        const board = []
+        for (const r of rankings) {
+          const ratings = {}
+          for (const dim of Object.keys(r.ratings)) ratings[dim] = { rating: r.ratings[dim].rating, source_ids: [] }
+          const scores = scoreOpportunity(ratings)
+          const value = {
+            priority: scores.priority, coverage: scores.coverage,
+            why: r.why, rationale: r.ratings, model, rule_version: 'rubric-v1.1+llm-rank-v1',
+          }
+          const { rows: claim } = await c.query(
+            `INSERT INTO claims (tenant_id, subject_type, subject_id, predicate, value, assertion_type,
+                                 rationale, created_by)
+             VALUES ($1,'organisation',$2,'lead_ranking',$3::jsonb,'inference',$4,$5) RETURNING id`,
+            [req.tenantId, r.organisation_id, JSON.stringify(value),
+             `LLM analyst lead ranking: ${r.why.slice(0, 300)}`, req.user.id],
+          )
+          board.push({ organisation_id: r.organisation_id, claim_id: claim[0].id, ...value })
+        }
+        board.sort((a, b) => b.priority - a.priority)
+        await audit(c, req.tenantId, req.user.id, 'leads.rank', 'claim', board[0]?.claim_id)
+        return { ranked: board, ranked_count: board.length, input_count: dossiers.length, model }
       })
       res.status(201).json(out)
     } catch (e) { next(e) }

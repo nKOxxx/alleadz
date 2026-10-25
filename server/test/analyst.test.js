@@ -1,9 +1,9 @@
-// server/test/analyst.test.js — the LLM analyst: cite-or-drop gate, mode:'llm' route
-// contract, and the discovery→analyze(LLM)→signal chain using the house recipe
-// (run rows inserted directly; LLM upstream stubbed via fetchImpl).
+// server/test/analyst.test.js — the LLM analyst: cite-or-drop gates (findings + rankings),
+// mode:'llm' route contract, /leads/rank scoring chain, using the house harness
+// (scratch DB, LLM upstream stubbed via fetchImpl).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createScratchDb, registerUser, api, queryAsTenant } from './helpers.js'
-import { gateFindings } from '../src/lib/analyst.js'
+import { gateFindings, gateRanking } from '../src/lib/analyst.js'
 import { extractAllowed } from '../src/lib/discovery.js'
 
 // ---- unit: the cite-or-drop law -------------------------------------------
@@ -137,3 +137,141 @@ describe('analyze mode:llm', () => {
     expect(an.json.signal.event_type).toBe('none')
   })
 })
+
+// ---- rank: gate + scoring chain --------------------------------------------
+describe('gateRanking', () => {
+  const dossier = { id: '11111111-1111-4111-8111-111111111111', name: 'Nimbus' }
+  const hay = 'ORG 11111111-1111-4111-8111-111111111111 (Nimbus)\nCLAIM [sourced_fact] pain: analysts stitch spreadsheets every single week'
+  it('keeps a ranking whose why is verbatim in the dossier', () => {
+    const out = gateRanking({
+      organisation_id: dossier.id, why: 'analysts stitch spreadsheets every single week',
+      ratings: { fit: { rating: 4, rationale: 'video-heavy team' }, trigger: { rating: 'unknown' } },
+    }, dossier, hay)
+    expect(out).not.toBeNull()
+    expect(out.ratings.fit.rating).toBe(4)
+    expect(out.ratings.trigger.rating).toBe('unknown')
+    expect(out.origin).toBe('llm_analyst')
+  })
+  it('drops hallucinated whys, id mismatches, and junk shapes', () => {
+    expect(gateRanking({ organisation_id: dossier.id, why: 'they said they will buy $2M next quarter', ratings: {} }, dossier, hay)).toBeNull()
+    expect(gateRanking({ organisation_id: '22222222-2222-4222-8222-222222222222', why: 'analysts stitch spreadsheets', ratings: {} }, dossier, hay)).toBeNull()
+    expect(gateRanking(null, dossier, hay)).toBeNull()
+    expect(gateRanking({ organisation_id: dossier.id, why: 'short', ratings: {} }, dossier, hay)).toBeNull()
+  })
+  it('clamps ratings and coerces non-numeric to unknown', () => {
+    const out = gateRanking({
+      organisation_id: dossier.id, why: 'analysts stitch spreadsheets',
+      ratings: { fit: { rating: 9, rationale: 'x' }, trigger: { rating: 'high', rationale: 'x' }, timing: { rating: -3, rationale: 'x' } },
+    }, dossier, hay)
+    expect(out.ratings.fit.rating).toBe(4)
+    expect(out.ratings.trigger.rating).toBe('unknown')
+    expect(out.ratings.timing.rating).toBe(0)
+  })
+})
+
+describe('POST /leads/rank', () => {
+  let ctx
+
+  const analystFetch = async (url, opts) => {
+    if (String(url).includes('chat/completions')) {
+      // respond with rankings derived from the request body so citations are real
+      const body = JSON.parse(opts.body)
+      const user = body.messages.find((m) => m.role === 'user').content
+      const ids = [...user.matchAll(/ORG ([0-9a-f-]{36}) \(([^)]+)\)/g)]
+      return { ok: true, status: 200, json: async () => ({
+        choices: [{ message: { content: JSON.stringify({
+          orgs: ids.map(([_, id, name]) => ({
+            organisation_id: id,
+            // verbatim substring of a dossier line — for the "bad" org this line
+            // does not exist, so the gate must drop it (cite-or-drop, exercised)
+            why: 'video-first team drowning in manual clipping',
+            ratings: {
+              fit: { rating: 4, rationale: 'video-first team' },
+              trigger: { rating: 3, rationale: 'hiring clip editors' },
+              timing: { rating: 'unknown' },
+              budget: { rating: 2, rationale: 'seed stage' },
+              access: { rating: 'unknown' },
+            },
+          })),
+        }) } }],
+      }) }
+    }
+    throw new Error('unexpected fetch in analyst test: ' + url)
+  }
+
+  beforeAll(async () => {
+    process.env.DEEPSEEK_API_KEY = 'test-key-not-real'
+    ctx = { db: await createScratchDb() }
+    ctx.app = ctx.db.createApp({ rateLimits: false, fetchImpl: analystFetch })
+    ctx.server = ctx.app.listen(0)
+    ctx.base = `http://127.0.0.1:${ctx.server.address().port}`
+    ctx.A = await registerUser(ctx.base, 'ranker@p7.test', 'Ranker')
+  })
+
+  afterAll(async () => {
+    delete process.env.DEEPSEEK_API_KEY
+    ctx?.server?.close()
+    await ctx?.db?.cleanup()
+  })
+
+  it('ranks orgs brain-rated spine-scored, persists inference claims, drops bad whys', async () => {
+    // two orgs; the SECOND gets a dossier whose content will NOT match the stub's why
+    // (stub emits the same why for both) -> only org 1 survives the gate
+    const mk = async (name) => (await queryAsTenant(ctx.db.pool, ctx.A.tenantId, ctx.A.userId,
+      `INSERT INTO organisations (tenant_id, canonical_name, entity_type) VALUES ($1,$2,'buyer') RETURNING id`,
+      [ctx.A.tenantId, name])).rows[0].id
+    const good = await mk('ClipForge Media')
+    const bad = await mk('DeskButton Ltd')
+
+    await queryAsTenant(ctx.db.pool, ctx.A.tenantId, ctx.A.userId,
+      `INSERT INTO claims (tenant_id, subject_type, subject_id, predicate, value, assertion_type, rationale, created_by)
+       VALUES ($1,'organisation',$2,'pain_point',$3::jsonb,'sourced_fact','seen on careers page',$4)`,
+      [ctx.A.tenantId, good, JSON.stringify('video-first team drowning in manual clipping'), ctx.A.userId])
+    await queryAsTenant(ctx.db.pool, ctx.A.tenantId, ctx.A.userId,
+      `INSERT INTO claims (tenant_id, subject_type, subject_id, predicate, value, assertion_type, rationale, created_by)
+       VALUES ($1,'organisation',$2,'product',$3::jsonb,'sourced_fact','homepage',$4)`,
+      [ctx.A.tenantId, bad, JSON.stringify('desk buttons'), ctx.A.userId])
+
+    const res = await api(ctx.base, { method: 'POST', path: '/leads/rank', token: ctx.A.token,
+      tenantId: ctx.A.tenantId, body: {} })
+    console.log('DEBUG rank ->', res.status, JSON.stringify(res.json).slice(0, 400))
+    expect(res.status).toBe(201)
+
+    // good org: brain rated fit4/trigger3/budget2 -> spine math (35 + 18.75 + 7.5) = 61.25, coverage 0.75
+    const g = res.json.ranked.find((r) => r.organisation_id === good)
+    expect(g).toBeTruthy()
+    expect(g.priority).toBeCloseTo(61.25, 2)
+    expect(g.coverage).toBeCloseTo(0.75, 2)
+    expect(g.why).toBe('video-first team drowning in manual clipping')
+    expect(g.model).toBeTruthy()
+
+    // bad org: why not verbatim in its dossier -> dropped by the gate
+    expect(res.json.ranked.find((r) => r.organisation_id === bad)).toBeUndefined()
+    expect(res.json.ranked_count).toBe(1)
+    expect(res.json.input_count).toBe(2)
+
+    // persistence: inference claim with non-empty rationale (schema-enforced)
+    const { rows: cl } = await queryAsTenant(ctx.db.pool, ctx.A.tenantId, ctx.A.userId,
+      `SELECT predicate, assertion_type, rationale, value FROM claims WHERE id = $1`, [g.claim_id])
+    expect(cl[0].predicate).toBe('lead_ranking')
+    expect(cl[0].assertion_type).toBe('inference')
+    expect(cl[0].rationale.length).toBeGreaterThan(0)
+    expect(cl[0].value.priority).toBeCloseTo(61.25, 2)
+  })
+
+  it('503s when no analyst is configured', async () => {
+    delete process.env.DEEPSEEK_API_KEY
+    const db2 = await createScratchDb()
+    const app2 = db2.createApp({ rateLimits: false })
+    const s2 = app2.listen(0)
+    const base2 = `http://127.0.0.1:${s2.address().port}`
+    const u = await registerUser(base2, 'norank@p7.test', 'NoRank')
+    const res = await api(base2, { method: 'POST', path: '/leads/rank', token: u.token,
+      tenantId: u.tenantId, body: {} })
+    expect(res.status).toBe(503)
+    s2.close()
+    await db2.cleanup()
+    process.env.DEEPSEEK_API_KEY = 'test-key-not-real'
+  })
+})
+
