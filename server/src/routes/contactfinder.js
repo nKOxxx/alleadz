@@ -72,11 +72,14 @@ export function createContactFinderRouter({ pool, fetchImpl } = {}) {
               continue
             }
             try {
-              await c.query(
+              const { rows: runRows } = await c.query(
                 `INSERT INTO discovery_runs (tenant_id, organisation_id, requested_url, final_url, http_status, content_hash, bytes, extracted, status, run_by)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ok',$9)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ok',$9) RETURNING id`,
                 [req.tenantId, org.id, link, page.finalUrl, page.status, page.contentHash, page.bytes,
                  JSON.stringify({ title: `contact-finder follow: ${link}` }), req.user.id])
+              await c.query(
+                `INSERT INTO discovery_snapshots (tenant_id, run_id, content_hash, body) VALUES ($1,$2,$3,$4)`,
+                [req.tenantId, runRows[0].id, page.contentHash, page.snapshot])
             } catch (err) {
               followFailures.push(`${link}: persist ${String(err.message).slice(0, 80)}`)
             }
