@@ -45,26 +45,42 @@ export function createContactFinderRouter({ pool, fetchImpl } = {}) {
         const seenEmails = new Set()
         const seenSlugs = new Set()
         const teamLinks = new Set()
+        const runUrls = new Set()
 
         // 2. harvest stored snapshots (no network)
         for (const run of runs) {
-          teamLinks.add(run.requested_url)
+          runUrls.add(run.requested_url)
           await harvestSnapshot(c, req, org.id, run.body, run.requested_url, { created, seenEmails, seenSlugs, teamLinks, runId: run.id })
         }
 
-        // 3. bounded team-page follow: same-host links, capped, SSRF-guarded
+        // 3. bounded team-page follow: NEW same-host pages first (never the
+        // already-stored run URLs), capped, SSRF-guarded; failures counted
+        const followed = []
+        const followFailures = []
         if (input.follow_team_links) {
-          for (const link of [...teamLinks].slice(0, TEAM_FETCH_CAP)) {
+          const fresh = [...teamLinks].filter((l) => !runUrls.has(l))
+          for (const link of fresh.slice(0, TEAM_FETCH_CAP)) {
             let page
-            try { page = await boundedFetch(link, { fetchImpl: fetchImpl || globalThis.fetch }) } catch { continue } // dead link: skip
-            if (page.status !== 200) continue
+            try {
+              page = await boundedFetch(link, { fetchImpl: fetchImpl || globalThis.fetch })
+            } catch (err) {
+              followFailures.push(`${link}: ${String(err.message).slice(0, 80)}`)
+              continue
+            }
+            if (page.status !== 200) {
+              followFailures.push(`${link}: http ${page.status}`)
+              continue
+            }
             try {
               await c.query(
                 `INSERT INTO discovery_runs (tenant_id, organisation_id, requested_url, final_url, http_status, content_hash, bytes, extracted, status, run_by)
                  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ok',$9)`,
                 [req.tenantId, org.id, link, page.finalUrl, page.status, page.contentHash, page.bytes,
                  JSON.stringify({ title: `contact-finder follow: ${link}` }), req.user.id])
-            } catch { /* snapshot table may cap body size — harvesting continues regardless */ }
+            } catch (err) {
+              followFailures.push(`${link}: persist ${String(err.message).slice(0, 80)}`)
+            }
+            followed.push(link)
             await harvestSnapshot(c, req, org.id, page.snapshot, link, { created, seenEmails, seenSlugs, teamLinks, runId: null })
           }
         }
@@ -106,6 +122,8 @@ export function createContactFinderRouter({ pool, fetchImpl } = {}) {
           contacts_created: created.contacts,
           hypotheses_created: created.hypotheses,
           people_new: created.people_new,
+          followed_pages: followed,
+          follow_failures: followFailures,
           team_links_found: [...teamLinks].slice(0, 10),
         }
       })
