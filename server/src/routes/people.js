@@ -25,7 +25,7 @@ const contactSchema = z.object({
   kind: z.enum(['email', 'phone', 'linkedin', 'other']),
   value: z.string().min(3).max(400),
   email_class: z.enum(['person_published', 'company_published', 'third_party_reported',
-    'functional_inbox', 'non_commercial_inbox', 'not_found']).optional(),
+    'functional_inbox', 'non_commercial_inbox', 'not_found', 'hypothesis']).optional(),
   deliverability: z.enum(['untested', 'verified', 'failed']).default('untested'),
   source_ids: z.array(z.string().uuid()).default([]),
   notes: z.string().max(1000).nullable().optional(),

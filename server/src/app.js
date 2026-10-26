@@ -23,6 +23,7 @@ import { createPeopleRouter } from './routes/people.js'
 import { createDiscoveryRouter } from './routes/discovery.js'
 import { createPortfolioRouter } from './routes/portfolio.js'
 import { createVerticalsRouter } from './routes/verticals.js'
+import { createContactFinderRouter } from './routes/contactfinder.js'
 import { createAnalyst } from './lib/analyst.js'
 
 export function createApp({ pool, logger = console, rateLimits = true, fetchImpl } = {}) {
@@ -60,6 +61,7 @@ export function createApp({ pool, logger = console, rateLimits = true, fetchImpl
   app.use('/api', createIntelligenceRouter({ pool, analyst }))
   app.use('/api', createPortfolioRouter({ pool }))
   app.use('/api', createVerticalsRouter({ pool }))
+  app.use('/api', createContactFinderRouter({ pool, fetchImpl }))
 
   // ---- static client (v1.0) ------------------------------------------------
   // Serve the built SPA from ../client/dist when present (same-origin, so the
